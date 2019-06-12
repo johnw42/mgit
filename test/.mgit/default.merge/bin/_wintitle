@@ -1,0 +1,5 @@
+#! /bin/bash
+
+# Set the title of a terminal emutator window.
+
+[[ $EMACS = t ]] || printf '\e]0;%s\007' "$*"

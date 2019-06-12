@@ -1,0 +1,90 @@
+#! /usr/bin/python
+import argparse
+import logging
+import os
+import re
+import subprocess
+import sys
+
+
+class App(object):
+
+  def Run(self, args):
+    # Check that the file is writable.
+    if not os.access(args.file, os.W_OK):
+      raise RuntimeError('file is not writable: %r' % args.file)
+
+    # Construct tags to look for.
+    tag_prefix = args.comment_prefix
+    tag_suffix = args.tag + args.comment_suffix + '\n'
+    start_tag = tag_prefix + 'BEGIN:' + tag_suffix
+    end_tag = tag_prefix + 'END:' + tag_suffix
+
+    # Read the file and find any existing tags.
+    with file(args.file) as stream:
+      content_lines = stream.readlines()
+    logging.info('read %s lines from %r',
+                 len(content_lines), args.file)
+
+    # Reverse the content so we're looking from the end.
+    content_lines.reverse()
+    try:
+      end_index = content_lines.index(end_tag)
+      start_index = content_lines.index(start_tag, end_index)
+    except ValueError:
+      # Pretend we found tags at the end of the file.
+      start_index = end_index = 0
+    logging.info('start_index=%s, end_index=%s',
+                 start_index, end_index)
+
+    # Read and reverse the new lines.
+    new_lines = sys.stdin.readlines()
+    logging.info('read %s lines from stdin', len(new_lines))
+
+    # Insert the new lines un-reverse the list.
+    content_lines[end_index:start_index+1] = (
+        [end_tag] + new_lines[::-1] + [start_tag])
+    content_lines.reverse()
+
+    if args.backup_suffix:
+      # Move the file to the backup location.
+      backup_file = args.file + args.backup_suffix
+      if os.path.exists(backup_file):
+        logging.info('deleting %r', backup_file)
+        os.remove(backup_file)
+      logging.info('moving %r to %r', args.file, backup_file)
+      os.rename(args.file, backup_file)
+
+    try:
+      # Write the modified file contents.
+      logging.info('writing modified content to %r', args.file)
+      with file(args.file, 'w') as stream:
+        stream.writelines(content_lines)
+    except:
+      # Something went wrong.  Try to restore the backup file.
+      logging.error('error writing content to %r', args.file)
+      if args.backup_suffix:
+        if os.path.exists(args.file):
+          logging.info('deleting mangled %r', args.file)
+          os.remove(args.file)
+        logging.info('moving %r back to %r', backup_file, args.file)
+        os.rename(backup_file, args.file)
+      raise
+
+def main():
+  parser = argparse.ArgumentParser(description='')
+  parser.add_argument('--debug', action='store_true')
+  parser.add_argument('--comment-prefix', default='# ')
+  parser.add_argument('--comment-suffix', default='')
+  parser.add_argument('--backup-suffix', default='~')
+  parser.add_argument('--tag')
+  parser.add_argument('file')
+  args = parser.parse_args()
+  if args.debug:
+    logging.basicConfig(level=logging.DEBUG)
+  if args.tag is None:
+    args.tag = os.environ['USER']
+  App().Run(args)
+
+
+if __name__ == '__main__': main()

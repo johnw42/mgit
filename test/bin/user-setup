@@ -1,0 +1,17 @@
+#! /bin/bash
+
+gsettings set org.gnome.desktop.interface gtk-key-theme Emacs
+
+# Show system tray icons.
+gsettings set com.canonical.Unity.Panel systray-whitelist "['all']"
+
+# Get rid of crazy scrollbars.
+gsettings set org.gnome.desktop.interface ubuntu-overlay-scrollbars false
+
+# Use only the right Alt key for the HUD.
+gconftool-2 --type string --set /apps/compiz-1/plugins/unityshell/screen0/options/show_hud Alt_R
+
+# Don't use Alt key for menu items in gnome-termianl.
+gconftool-2 --set /apps/gnome-terminal/global/use_mnemonics --type boolean false
+
+#echo export LIBOVERLAY_SCROLLBAR=0 >> ~/.xprofile

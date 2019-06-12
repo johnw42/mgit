@@ -1,0 +1,16 @@
+#! /bin/bash
+
+# Emulate "less"-like behavior using emacs.
+
+set -e
+
+IFS=
+if [[ $# == 0 ]]; then
+  TEMPFILE=$(tempfile)
+  cat >$TEMPFILE
+  if ! emacsclient -n -c -e "(eless \"$TEMPFILE\")"; then
+    rm -f $TEMPFILE
+  fi
+else
+  find-file $1
+fi

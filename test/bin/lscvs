@@ -1,0 +1,11 @@
+#! /bin/sh
+
+# Echo the names of all the files managed by CVS in any of the directories
+# specified as arguments (or the current directory).  Not recusrive.
+
+[[ $# != 0 ]] || set .
+for DIR; do
+  if [[ -f "$DIR/CVS/Entries" ]]; then
+    sed "/^\\//!d;s:/\\([^/]*\\)/[0-9].*:$DIR/\\1:" "$DIR/CVS/Entries"
+  fi
+done

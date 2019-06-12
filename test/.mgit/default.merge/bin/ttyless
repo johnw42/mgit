@@ -1,0 +1,9 @@
+#! /bin/bash
+
+# Run less, but only if stdout is a tty.
+
+if [[ -t 1 ]]; then
+   exec less
+else
+   exec cat
+fi

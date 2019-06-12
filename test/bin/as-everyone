@@ -1,0 +1,10 @@
+#! /bin/bash
+
+unset IFS
+
+die() {
+  echo $(basename 0): $* >&2
+  exit 1
+}
+
+[[ $(whoami) == root ]] || die "must be root"

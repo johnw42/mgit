@@ -1,0 +1,73 @@
+#! /usr/bin/python
+
+"""Print out the conflicts in the current git repository in a format
+suitable for user with emacs's compile command."""
+
+import subprocess
+import re
+import sys
+import optparse
+import os.path
+
+p = optparse.OptionParser()
+p.add_option('--emacs', help='emacs mode',
+             action='store_const', const='emacs', dest='mode',
+             default='files')
+p.add_option('-q', '--quiet', help='generate no output',
+             action='store_const', const='quiet', dest='mode')
+p.add_option('--ignore-markers',
+             help='show files with or without conflict markers',
+             action='store_const', const='ignore', dest='markers',
+             default='ignore')
+p.add_option('--with-markers', help='only show files with conflict markers',
+             action='store_const', const='with', dest='markers')
+p.add_option('--without-markers',
+             help='only show files without conflict markers',
+             action='store_const', const='without', dest='markers')
+opts, args = p.parse_args()
+
+def FindConflictLines(status, path):
+  result = []
+  if status in ('both modified', 'both added') and os.path.isfile(path):
+    marker_start = None
+    marker_middle = None
+    for i, line in enumerate(open(path)):
+      line_num = i + 1
+      if marker_start is None:
+        if line.startswith('<<<<<<< '):
+          marker_start = line_num
+      elif marker_middle is None:
+        if line.startswith('======='):
+          marker_middle = line_num
+      else:
+        if line.startswith('>>>>>>> '):
+          result.append((marker_start, marker_middle, line_num))
+          marker_start = marker_middle = None
+  return result
+
+# TODO(jrw): Condsider using git diff --cc --name-status instead
+git_output = subprocess.Popen(['git', 'status', '--'] + args, stdout=subprocess.PIPE).communicate()[0]
+section = ''
+any_files_found = False
+for line in git_output.split('\n'):
+  if line.startswith('# ') and line.endswith(':'):
+    section = line
+  elif section == '# Unmerged paths:':
+    m = re.match(r'#\t([^:]+): +(.*)', line)
+    if m:
+      status, path = m.groups()
+      path = os.path.abspath(path)
+      conflict_lines = FindConflictLines(status, path)
+      if ((opts.markers != 'without' and conflict_lines) or
+          (opts.markers != 'with' and not conflict_lines)):
+        any_files_found = True
+        if opts.mode == 'emacs':
+          if conflict_lines:
+            for marker_start, _, _ in conflict_lines:
+              print '%s:%d: merge conflict' % (path, marker_start)
+          else:
+            print '%s:0: %s' % (path, status)
+        elif opts.mode == 'files':
+          print path
+if any_files_found:
+  sys.exit(1)

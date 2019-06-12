@@ -1,0 +1,11 @@
+#! /bin/bash
+
+if [[ $# == 0 ]]; then
+  pwd | tr -d '\n' | xclip
+elif [[ $# == 1 ]]; then
+  abspath "$1" | tr -d '\n' | xclip
+else
+  for arg; do
+    abspath "$arg"
+  done | xclip
+fi

@@ -1,0 +1,8 @@
+#! /bin/bash
+for path; do
+  case $path in
+    $HOME) echo '~' ;;
+    $HOME/*) echo "~/${path#$HOME/}" ;;
+    *) printf '%s\n' "$path"
+  esac
+done

@@ -1,0 +1,62 @@
+#! /bin/bash
+
+# Execute the "next" program in $PATH with a given name.  The first
+# argument is an absolute path of a program.  This script finds $1 in
+# $PATH and executes the next program.  If $1 is the last program in
+# $PATH, this script returns 1.
+#
+# If the "-q" flag is given, this script just looks for the next
+# matching program and returns 0 if it finds a program to run or 1 if
+# it doesn't.
+#
+# Examples:
+#
+#   next "$0" "$@"
+#
+#   [[ next -q "$0" ]] && exec next "$0" "$@"
+
+IFS=
+
+queryMode=false
+verbose=false
+while true; do
+  case "$1" in
+  -q) queryMode=true ;;
+  -v) verbose=true ;;
+  --) ;;
+  *) break
+  esac
+  shift
+done
+
+if [[ $1 != */* ]]; then
+  echo "next: first argument must contain /"
+  exit 1
+fi
+
+toSkip=$1
+name=${toSkip##*/}
+startDir=${toSkip%/*}
+shift
+
+startDirSeen=false
+dirsToSearch=$PATH
+IFS=:
+for dir in $dirsToSearch; do
+  IFS=
+  if $startDirSeen && [[ $dir != $startDir ]] && [[ -x $dir/$name ]]; then
+    $verbose && echo $dir/$name
+    if $queryMode; then
+      exit 0
+    else
+      exec $dir/$name $@
+    fi
+  elif [[ $dir == $startDir ]]; then
+    startDirSeen=true
+  fi
+done
+
+if $verbose || ! $queryMode; then
+  echo "next: $dir not in \$dirsToSearch" >&2
+fi
+exit 1

@@ -1,0 +1,13 @@
+#! /bin/bash
+
+# Script to be run on every login (ssh, GUI session, console login).
+
+set -e
+IFS=
+
+main() {
+  mkdir -p $XDG_RUNTIME_DIR/jrw
+  per_host &
+}
+
+main

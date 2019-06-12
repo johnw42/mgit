@@ -1,0 +1,12 @@
+#! /bin/bash
+
+main() {
+  local file=${1:-~/homedir/.emacs}
+  emacs -Q -l ~/bin/elisp/profile-dotemacs.el \
+        --eval "(setq debug-on-error t)" \
+        --eval "(setq profile-dotemacs-file (pop command-line-args-left))" \
+        "$file" \
+        -f profile-dotemacs
+}
+
+main "$@"

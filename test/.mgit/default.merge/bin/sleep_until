@@ -1,0 +1,7 @@
+#! /bin/bash
+# Sleep until some command returns true using exponential backoff.
+# Exits immediately if given no arguments.
+
+until "$@"; do
+  sleep $((1 + SECONDS / 2))
+done

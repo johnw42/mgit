@@ -1,0 +1,49 @@
+#! /bin/bash
+
+# Save the current state of the workspace in a branch named wip/$branch.
+
+set -e
+
+stash_once() {
+  local IFS=
+  local base_branch=$(git name-rev --name-only HEAD)
+  [[ $base_branch ]]
+  local wip_branch=wip/$base_branch
+  local stash_ref=$(git stash create)
+  git branch -f $wip_branch $stash_ref
+}
+
+main() {
+  local IFS=
+
+  stash_once
+
+  if [[ $# == 0 ]]; then
+    return
+  fi
+
+  local interval=$1
+  SECONDS=-$interval
+  while true; do
+    if (( timeout=-SECONDS, timeout <= 0)); then
+      break
+    fi
+
+    # Watch for changes to files that are relevant to git.
+    {
+      # Don't forget to watch the top-level directory.
+      echo .
+      # This git command causes deleted files to appear more than once
+      # in the output.  The deleted files are then filtered out with
+      # uniq -u.
+      #
+      # TODO(jrw): Exclude symlinks, especially broken symlinks.
+      git ls-files -c -o -d --directory --exclude-standard | sort | uniq -u
+    } | if inotifywait -e close_write -t $timeout --fromfile -; then
+      echo "re-stashing"
+      stash_once
+    fi
+  done
+}
+
+main "$@"

@@ -1,0 +1,27 @@
+#! /bin/bash
+
+# Runs the command passed as an argument, capturing all output on
+# stdout and stderr.  If the command exits with a non-zero exit code,
+# the output is written to stdout.
+#
+# If run from a TTY, just runs a the command with stderr directed to
+# stdout.
+
+main() {
+  if [[ -t 0 ]]; then
+    exec "$@" 2>&1
+  else
+    local tempfile=$(tempfile)
+    trap 'rm -f -- "$tempfile"' EXIT
+    (exec "$@" >"$tempfile" 2>&1)
+    local error=$?
+    if [[ $error != 0 ]]; then
+      echo "Job '$cmd' returned $error"
+      echo
+      cat -- "$tempfile"
+    fi
+    exit $error
+  fi
+}
+
+main "$@"

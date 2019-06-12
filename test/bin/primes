@@ -1,0 +1,91 @@
+#! /usr/bin/env python
+# Prime number generator.
+
+import argparse
+import math
+import sys
+
+def sieve():
+  yield 2
+  found = []
+  n = 3
+  while True:
+    maxFactor = int(math.sqrt(n))
+    isPrime = True
+    for prime in found:
+      if prime > maxFactor:
+        break
+      elif n % prime == 0:
+        isPrime = False
+        break
+    if isPrime:
+      found.append(n)
+      yield n
+    n += 2
+
+def min_bits(n):
+  return 1 << (int(n) - 1)
+
+def main():
+  p = argparse.ArgumentParser(description='Generate prime numbers.')
+  p.add_argument(
+      '--bits', type=int,
+      help='set the number of bits in the values to display')
+  p.add_argument(
+      '--min', type=int,
+      help='set minimum value to display')
+  p.add_argument(
+      '--max', type=int,
+      help='set the maximum value to display')
+  p.add_argument(
+      '--min-bits', type=int,
+      help='set the minimum number of bits in the values to display')
+  p.add_argument(
+      '--max-bits', type=int,
+      help='set the maximum number of bits in values to display')
+  p.add_argument(
+      '--hex', action='store_true',
+      help='generate output in hexadecimal')
+  args = p.parse_args()
+
+  if args.bits != None:
+    if args.min_bits != None or args.max_bits != None:
+      p.exit('Cannot mix --bits with --min-bits or --max-bits')
+    args.min_bits = args.bits
+    args.max_bits = args.bits
+
+  if args.min_bits != None:
+    if args.min != None:
+      p.exit('cannot specify multiple minimum values')
+    args.min = 1 << (args.min_bits - 1)
+
+  if args.max_bits != None:
+    if args.max != None:
+      p.exit('cannot specify multiple maximum values')
+    args.max = (1 << args.max_bits) - 1
+
+  warn_bits = 24
+  if args.min >= 2**warn_bits:
+    print >> sys.stderr, 'warning: using more than', warn_bits, 'will be slow'
+
+  min_value = args.min or 0
+  max_value = args.max
+  hex_out = args.hex
+  prime_iter = sieve()
+  try:
+    while True:
+      prime = next(prime_iter)
+      if prime >= min_value: break
+    while True:
+      if max_value is not None and prime > max_value: break
+      if hex_out:
+        print hex(prime)
+      else:
+        print prime
+      prime = next(prime_iter)
+  except KeyboardInterrupt:
+    pass
+  except IOError:
+    pass
+
+main()

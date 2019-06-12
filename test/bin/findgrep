@@ -1,0 +1,68 @@
+#! /usr/bin/env zsh
+
+help() {
+  cat <<EOF
+usage: $(basename $0) [grep-flags] [--] <pattern> <find-args>
+EOF
+  exit $1
+}
+
+grep_args0=(-H)
+grep_args=()
+while true; do
+  [[ $# == 0 ]] && help 1
+
+  case $1 in
+  --)
+      grep_args=($grep_args $1 $2)
+      shift 2
+      break
+      ;;
+  --help)
+      help 0
+      ;;
+  -*)
+      grep_args=($grep_args $1)
+      if [[ $1 == --no-filename ||
+            ( $1 != --* && $1 = -*h* ) ]]; then
+        grep_args0=()
+      fi
+      shift
+      ;;
+  *)
+      grep_args=($grep_args $1)
+      shift
+      break
+      ;;
+  esac
+done
+
+find_args=()
+while (( $# )); do
+  case $1 in
+  -H|-L|-P)
+      find_args=($find_args $1)
+      shift
+      ;;
+  "("|"!"|-*)
+      break
+      ;;
+  *)
+      find_args=($find_args $1)
+      shift
+  esac
+done
+
+case $# in
+0)
+    find_expr=()
+    ;;
+*)
+    find_expr=(\( $@ \))
+esac
+
+find_cmd=(find $find_args -name .svn -prune -o $find_expr -print0)
+grep_cmd=(grep $grep_args0 $grep_args)
+#echo $find_cmd
+#echo $grep_cmd
+$find_cmd | xargs -0 -n100 $grep_cmd

@@ -1,0 +1,42 @@
+#! /usr/bin/python
+import argparse
+import logging
+import os
+import subprocess
+import sys
+import re
+
+from jrw import wrapper
+
+def main():
+  #logging.basicConfig(level=logging.DEBUG)
+  # parser = argparse.ArgumentParser(description='')
+  # args = parser.parse_args()
+
+  adb = wrapper.FindWrappedProgram()
+
+  cmd = (sys.argv + [None])[1]
+
+  if cmd in [None, 'help']:
+    # Use 'less' to show help.
+    adb_proc = subprocess.Popen([adb], stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    less_proc = subprocess.Popen(['less'], stdin=adb_proc.stdout)
+    less_proc.wait()
+    sys.exit(adb_proc.wait())
+
+  try:
+    android_serial = os.getenv('ANDROID_SERIAL')
+    if android_serial:
+      if sys.argv[1:] == ['connect']:
+        # adb connect => adb connect $ANDROID_SERIAL
+        wrapper.ExecWrappedProgram(['connect', android_serial])
+      elif cmd in 'push pull sync shell logcat reboot'.split():
+        # Connect if necessary.
+        output = subprocess.check_output([adb, 'get-state'])
+        if output == 'unknown\n':
+          subprocess.check_call([adb, 'connect', android_serial])
+  finally:
+    wrapper.ExecWrappedProgram()
+
+if __name__ == '__main__':
+  main()

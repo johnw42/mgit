@@ -1,0 +1,14 @@
+#! /usr/bin/env python
+
+import os, sys, getopt
+
+conditional = False
+opts, args = getopt.getopt(sys.argv[1:], "c", ["conditional"])
+for opt, arg in opts:
+    if opt in ("-c", "--conditional"):
+        conditional = True
+
+code = os.spawnlp(os.P_WAIT, args[0], *args)
+if code != 0 or not conditional:
+    os.spawnlp(os.P_NOWAIT, "alert", "alert", "-e%d" % code, "--", *args)
+sys.exit(code)

@@ -1,0 +1,2 @@
+scatter:
+	./scatter.py

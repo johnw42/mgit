@@ -1,0 +1,17 @@
+#! /bin/bash
+
+coproc_send() {
+  id=$1
+  shift
+  echo ${foo[1]}
+  echo "$@" >&"${foo[1]}"
+}
+
+coproc_kill() {
+  kill -9 $1
+}
+
+coproc foo { coproc_example; }
+echo "word 1" "word 2" >&${foo[1]}
+sleep 1
+kill -9 $foo_PID

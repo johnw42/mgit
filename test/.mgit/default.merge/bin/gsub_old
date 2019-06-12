@@ -1,0 +1,381 @@
+#! /usr/bin/env python
+
+"""
+Script that does a find-and-replace across multiple files.  Similar to
+'perl -p -i -e' with more features.
+
+By default, this program prints the names of the changed files.
+"""
+
+import optparse
+import sys
+import tempfile
+import os
+import re
+import shutil
+from urllib import quote_plus
+
+
+TEMP_FILE_PREFIX = "gsub"
+TEMP_FILE_SUFFIX = ".tmp"
+BACKUP_BASE = os.path.expanduser("~/.cache/gsub")
+
+
+
+def main():
+  options = parse_args()
+  file_list = build_file_list(options)
+  sanity_check(file_list, options)
+  for filename in file_list:
+    process_file(filename, options)
+
+
+
+def parse_args():
+  p = optparse.OptionParser("""\
+usage: %prog [OPTIONS] PATTERN REPLACEMENT FILE...
+
+PATTERN is a Python/Perl-style regular expression.  REPLACEMENT may
+contain backreferences (\\1, \\2, etc.)
+""")
+  p.add_option("-i", "--backup-suffix", metavar="SUFFIX",
+               help="create backup file by appending SUFFIX (like perl -i)")
+  p.add_option("-F", "--fixed-strings", action="store_true",
+               help="treat PATTERN and REPLACEMENT as literal strings (like grep -F)")
+  p.add_option("-R", "-r", "--recursive", action="store_true",
+               help="process directories recursively")
+  p.add_option("-l", "--count-changed-lines", action="store_true",
+               help="print the number of lines changed in each file")
+  p.add_option("--force", action="store_true",
+               help="ignore sanity checks")
+  p.add_option("--diff", action="store_true",
+               help="write a diff to standard out; don't modify any files")
+  p.add_option("-n", "--dry-run", action="store_true",
+               help="don't modify any files")
+  p.add_option("-L", "--dereference", action="store_true",
+               help="follow symlinks")
+  p.add_option("-k", "--keep-going", action="store_true",
+               help="continue procressing of some files fail santity checks")
+
+  options, args = p.parse_args()
+  if len(args) < 3:
+    p.error("Not enough arguments.")
+
+  if options.diff:
+    options.dry_run = True
+
+  options.context = 3
+  options.pattern = args[0]
+  options.replacement = args[1]
+  options.files = args[2:]
+
+  options.backup_dir = None
+  if not options.dry_run:
+    if not os.path.isdir(BACKUP_BASE):
+      os.makedirs(BACKUP_BASE)
+    new_id = 0
+    for name in os.listdir(BACKUP_BASE):
+      try:
+        old_id = int(name)
+      except ValueError:
+        pass
+      new_id = max(new_id, old_id + 1)
+    options.backup_dir = os.path.join(BACKUP_BASE, str(new_id))
+
+  return options
+
+
+
+def build_file_list(options):
+  result = []
+
+  def process(path):
+    if options.dereference or not os.path.islink(path):
+      if os.path.isdir(path):
+        if options.recursive:
+          for entry in os.listdir(path):
+            process(os.path.join(path, entry))
+      elif not is_backup_file(path, options):
+        result.append(path)
+
+  for filename in options.files:
+    process(filename)
+
+  return result
+
+
+
+def trace(message):
+  sys.stderr.write("%s\n" % message)
+
+
+
+def warn(message):
+  sys.stderr.write("warning: %s\n" % message)
+
+
+
+class ErrorProcessingFile(Exception): pass
+
+
+
+def fail(message):
+  """Print a warning message to stderr and abort processing the
+  current file."""
+  raise ErrorProcessingFile(message)
+
+
+
+def process_file(filename, options):
+  """Process a file names `filename` according to the settings in
+  `options`."""
+
+  lines_changed = 0
+
+  if options.dry_run:
+    input_file = open(filename, "rt")
+    try:
+      lines_changed = process_file_content(input_file, None, options)
+    finally:
+      input_file.close()
+  else:
+    try:
+      # Create the backup file if necessary.
+      backup_filename = None
+      if options.backup_suffix:
+        backup_filename = filename + options.backup_suffix
+        try:
+          os.link(filename, backup_filename)
+        except OSError:
+          fail("backup file already exists: %s" % backup_filename)
+
+      try:
+        lines_changed = process_file_nobackup(filename, options)
+      finally:
+        if backup_filename and not lines_changed:
+          os.unlink(backup_filename)
+    except:
+      x = sys.exc_info()[1]
+      sys.stderr.write("error processing " + filename + ": " + str(x) + "\n")
+      raise
+
+  if options.diff:
+    if lines_changed:
+      print "---", filename
+      print "+++", filename
+      for segment in merge(lines_changed):
+        segment.write(sys.stdout)
+  elif options.count_changed_lines:
+    print "%s: %d" % (filename, len(lines_changed))
+  elif lines_changed:
+    print filename
+
+
+def process_file_nobackup(filename, options):
+  """Process the file named `filename` without making a backup file."""
+
+  # Open a temporary file.
+  temp_fd, temp_filename = tempfile.mkstemp(suffix=TEMP_FILE_SUFFIX,
+                                            prefix=TEMP_FILE_PREFIX,
+                                            dir=os.path.dirname(filename),
+                                            text=True)
+  lines_changed = []
+  try:
+    temp_file = os.fdopen(temp_fd, "wt")
+    try:
+      input_file = open(filename, "rt")
+      try:
+        lines_changed = process_file_content(input_file, temp_file, options)
+      finally:
+        input_file.close()
+    finally:
+      temp_file.close()
+  finally:
+    if lines_changed:
+      if options.backup_dir:
+        if not os.path.isdir(options.backup_dir):
+          os.mkdir(options.backup_dir)
+        backup_filename = os.path.abspath(filename)
+        head, sep, tail = backup_filename.partition(os.getenv("HOME") + "/")
+        if sep != "" and head == "":
+          backup_filename = tail
+        backup_filename = quote_plus(backup_filename, "")
+        backup_path = os.path.join(options.backup_dir, backup_filename)
+        shutil.copy2(filename, backup_path)
+
+      # Copy mode from the old file to the new file, taking care to
+      # account for cases where the new file has a different owner.
+      stat_in = os.stat(filename)
+      stat_out = os.stat(temp_filename)
+      new_mode = stat_in.st_mode & 0007
+      if stat_in.st_gid == stat_out.st_gid:
+        new_mode |= stat_in.st_mode & 0070
+      if stat_in.st_uid == stat_out.st_uid:
+        new_mode |= stat_in.st_mode & 0700
+      os.chmod(temp_filename, new_mode)
+
+      # Move the temp file into place.
+      os.rename(temp_filename, filename)
+    else:
+      os.unlink(temp_filename)
+
+  return lines_changed
+  
+
+
+def process_file_content(input, output, options):
+  """Read lines from the file `input` and write the changed lines to
+  `output`.  Returns the number of lines with changes."""
+
+  lines_changed = []
+  
+  fixed_strings = options.fixed_strings
+  replacement = options.replacement
+  if fixed_strings:
+    pattern = options.pattern
+  else:
+    pattern = re.compile(options.pattern)
+
+  line_number = 0
+  for old_line in input:
+    line_number += 1
+
+    if fixed_strings:
+      new_line = old_line.replace(pattern, replacement)
+    else:
+      new_line = pattern.sub(replacement, old_line)
+
+    segment = None
+    if old_line != new_line:
+      segment = DiffSegment.single_line(line_number,
+                                        old_line,
+                                        new_line)
+      lines_changed.append(segment)
+
+    if output is not None:
+      output.write(new_line)
+
+  return lines_changed
+
+
+
+class DiffSegment(object):
+
+  def __init__(self, start_line, changes):
+    self.start_line = start_line
+    self.changes = list(changes)
+    self.length = sum(map(len, changes))
+
+  @classmethod
+  def single_line(cls,
+                  line_number,
+                  old_line,
+                  new_line):
+    return DiffSegment(line_number,
+                       [ChangedLines([old_line], [new_line])])
+
+  def __len__(self):
+    return self.length
+
+  def write(self, out):
+    start = self.start_line
+    length = len(self)
+    out.write("@@ -%d,%d +%d,%d @@\n" % (start, length, start, length))
+    for change_set in self.changes:
+      for line in change_set.old_lines:
+        out.write("- " + line)
+      for line in change_set.new_lines:
+        out.write("+ " + line)
+
+  def merge_with(self, other):
+    assert self.start_line < other.start_line
+    if self.start_line + len(self) < other.start_line:
+      return None
+
+    assert self.start_line + len(self) == other.start_line
+    merged = DiffSegment(self.start_line,
+                         merge(self.changes + other.changes))
+    return merged
+
+  def merge_changes(self):
+    i = 0
+    while i + 1 < len(self.changes):
+      c1, c2 = self.changes[i:i+2]
+      if isinstance(c1, tuple) and isinstance(c2, tuple):
+        c = (c1[0] + c2[0], c1[1] + c2[1])
+        self.changes[i:i+2] = [c]
+      else:
+        i += 1
+
+
+
+class ChangedLines(object):
+  
+  def __init__(self, old_lines, new_lines=[]):
+    assert len(old_lines) == len(new_lines) or not new_lines
+    self.old_lines = old_lines
+    self.new_lines = new_lines
+
+  def __len__(self):
+    return len(self.old_lines)
+
+  def merge_with(self, other):
+    if not self.new_lines or not self.new_lines:
+      return None
+    return ChangedLines(self.old_lines + other.old_lines,
+                        self.new_lines + other.new_lines)
+
+
+
+def merge(items):
+  """Merge adjacent items in a sequence using the items' `merge_with`
+  method.  The `merge_with` method should either merge two items and
+  return the merged item, or it should return None if the items cannot
+  be merged."""
+  items = list(items)
+  i = 0
+  while i + 1 < len(items):
+    a, b = items[i:i+2]
+    merged = a.merge_with(b)
+    if merged is None:
+      i += 1
+    else:
+      items[i:i+2] = [merged]
+  return items
+
+
+
+def sanity_check(file_list, options):
+  if options.force:
+    return
+
+  abort = False
+  bad_dirs = set()
+  
+  for path in file_list:
+    dirname, filename = os.path.split(path)
+    
+    if ".#" + filename in os.listdir(dirname or "."):
+      warn("%s appears to be modified in an emacs session" % path)
+      abort = True
+
+    for part in ["/.svn/", "/CVS/"]:
+      if part in path:
+        bad_dir = part[:path.index(part)] + part
+        if bad_dir not in bad_dirs:
+          warn("%s is in a version-control directory" % path)
+          abort = True
+          bad_dirs.add(bad_dir)
+      
+  if abort and not options.keep_going:
+    sys.exit("aborted due to warnings")
+
+
+
+def is_backup_file(filename, options):
+  return options.backup_suffix and filename.endswith(options.backup_suffix)
+  
+
+
+
+if __name__ == "__main__": main()

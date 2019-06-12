@@ -1,0 +1,2 @@
+#! /bin/bash
+exec dzen2 -ta left -x $1 -h $(( $2 + 4 )) -fn '-misc-fixed-bold-r-*-*-13-*-*-*-*-*-*-1'

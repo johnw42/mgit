@@ -1,0 +1,3 @@
+#! /bin/bash
+
+sshall -uroot -i$HOME/.ssh/root_id_dsa "$@"

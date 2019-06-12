@@ -1,0 +1,6 @@
+#! /bin/bash
+
+env > ~/env2
+#export DBUS_SESSION_BUS_ADDRESS=$(cat /tmp/local-dbus-session)
+#gnome-screensaver-command -a
+DBUS_SESSION_BUS_ADDRESS=unix:abstract=/tmp/dbus-yxRlUVtoPV,guid=c796b660deedf9938da578b100015940 gnome-screensaver-command -a

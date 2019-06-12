@@ -1,0 +1,121 @@
+#! /bin/bash
+
+
+
+filter_junk() {
+  cat > expected
+  "$@" 2>&1 | sed "
+\:^Loading $HOME/.emacs.d/elpa/.*-pkg\.\.\.:d
+\:^Loading $HOME/.emacs.d/elpa/.*-pkg.el (source)\.\.\.:d
+s:$HOME/.emacs.d/elpa/[^/]*:~elpa:
+s:$HOME:~:" > actual
+  if diff -u expected actual; then
+    echo "No differences."
+  fi
+  #{ cat; "$@" 2>&1 | nl; } | sort | uniq -u
+}
+
+main() {
+  set -e
+  unset IFS DISPLAY ALTERNATE_EDITOR
+  runtime_dir=${XDG_RUNTIME_DIR:?}/$(basename $0)
+  exec </dev/null 2>&1
+  clear
+  install -d $runtime_dir
+  cd $runtime_dir
+  export PROFILE_EMACS_INIT=$PWD
+
+  emacsclient -s temp -e '(kill-emacs)' >/dev/null 2>&1 || true
+
+  find ~/.emacs.d/elisp -name \*.elc -exec rm {} +
+
+  echo "Compiling..."
+  filter_junk emacs --batch -f batch-byte-compile ~/.emacs <<EOF
+Loading 00debian-vars...
+Loading /etc/emacs/site-start.d/50autoconf.el (source)...
+Loading /etc/emacs/site-start.d/50cmake-data.el (source)...
+Loading /etc/emacs/site-start.d/50dictionaries-common.el (source)...
+Loading debian-ispell (compiled; note, source file is newer)...
+Loading /var/cache/dictionaries-common/emacsen-ispell-default.el (source)...
+Loading /var/cache/dictionaries-common/emacsen-ispell-dicts.el (source)...
+Loading /etc/emacs/site-start.d/50emacs-goodies-el.el (source)...
+Loading /etc/emacs/site-start.d/50emacs-google-config.el (source)...
+Loading /usr/share/emacs24/site-lisp/google/google-autoloads.el (source)...
+Loading /etc/emacs/site-start.d/50global.el (source)...
+Wrote ~/.emacs.elc
+EOF
+
+  if [ ~/.emacs.elc -nt ~/.emacs ]; then
+    echo "Starting Emacs..."
+    time filter_junk emacs --no-desktop --daemon=temp <<EOF
+
+Warning: due to a long standing Gtk+ bug
+http://bugzilla.gnome.org/show_bug.cgi?id=85715
+Emacs might crash when run in daemon mode and the X11 connection is unexpectedly lost.
+Using an Emacs configured with --with-x-toolkit=lucid does not have this problem.
+("emacs" "--no-desktop")
+Loading 00debian-vars...
+Loading 00debian-vars...done
+Loading /etc/emacs/site-start.d/50autoconf.el (source)...
+Loading /etc/emacs/site-start.d/50autoconf.el (source)...done
+Loading /etc/emacs/site-start.d/50cmake-data.el (source)...
+Loading /etc/emacs/site-start.d/50cmake-data.el (source)...done
+Loading /etc/emacs/site-start.d/50dictionaries-common.el (source)...
+Loading debian-ispell (compiled; note, source file is newer)...
+Loading /var/cache/dictionaries-common/emacsen-ispell-default.el (source)...
+Loading /var/cache/dictionaries-common/emacsen-ispell-default.el (source)...done
+Loading debian-ispell (compiled; note, source file is newer)...done
+Loading /var/cache/dictionaries-common/emacsen-ispell-dicts.el (source)...
+Loading /var/cache/dictionaries-common/emacsen-ispell-dicts.el (source)...done
+Loading /etc/emacs/site-start.d/50dictionaries-common.el (source)...done
+Loading /etc/emacs/site-start.d/50emacs-goodies-el.el (source)...
+Loading /etc/emacs/site-start.d/50emacs-goodies-el.el (source)...done
+Loading /etc/emacs/site-start.d/50emacs-google-config.el (source)...
+Loading /usr/share/emacs24/site-lisp/google/google-autoloads.el (source)...
+Loading /usr/share/emacs24/site-lisp/google/google-autoloads.el (source)...done
+Loading /etc/emacs/site-start.d/50emacs-google-config.el (source)...done
+Loading /etc/emacs/site-start.d/50global.el (source)...
+Loading /etc/emacs/site-start.d/50global.el (source)...done
+PROFILING EMACS INIT
+Loading cl...
+Loading cl...done
+Loading edmacro...
+Loading kmacro...
+Loading kmacro...done
+Loading edmacro...done
+Loading desktop...
+Loading desktop...done
+Loading savehist...
+Loading savehist...done
+Loading ~/.emacs.d/history...
+Loading ~/.emacs.d/history...done
+Loading time-date...
+Loading time-date...done
+END OF .EMACS FILE
+Loading ~/.emacs...done
+Loading ~/.abbrev_defs...
+Loading ~/.abbrev_defs...done
+Starting Emacs daemon.
+Loading server...
+Loading server...done
+EOF
+     
+    echo Extra profiling...
+    time emacsclient -s temp -e '(profile-this)' >/dev/null
+    filter_junk cat emacs-messages.txt <<EOF
+
+Loading ~/.emacs...done
+Loading ~/.abbrev_defs...done
+Starting Emacs daemon.
+Loading server...done
+IDLE TIMER FIRED
+EOF
+    # sleep 5
+    emacsclient -s temp -e '(kill-emacs)'
+  fi
+
+  # sleep 2
+  # exec $0
+}
+
+main; exit

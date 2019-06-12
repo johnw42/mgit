@@ -1,0 +1,11 @@
+#! /bin/bash
+
+set -e
+IFS='
+'
+java_file=$1
+shift
+cd "$(g3-dir $java_file)"
+for target in $(find-java-targets $java_file); do
+  blaze edit add_value $target deps "$@" >/dev/null 2>&1
+done

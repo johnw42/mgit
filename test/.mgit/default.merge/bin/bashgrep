@@ -1,0 +1,13 @@
+#! /bin/bash
+# Grep files that are potentially loaded into bash.
+
+check() {
+  local name
+  for name; do
+    if [[ $name ]]; then
+      echo "$name"
+    fi
+  done
+}
+
+exec grep "$@" $(check ~/.bashrc ~/.profile ~/.bash_profile ~/.bashrc.d/*.sh ~/.bash_profile.d/*.sh)

@@ -1,0 +1,262 @@
+#! /usr/bin/python
+import argparse
+import logging
+import os
+import re
+import subprocess
+import sys
+from collections import defaultdict
+import hashlib
+
+#verify:sha1:08a40ac91f16a20048cb8c5e684eb2cd9951c501
+# Should pass.
+#verify:end
+#
+#verify:sha1:08a40ac91f16a20048cb8c5e684eb2cd9951c501
+#verify:erase_literal:foo
+# Should pass.foofoo
+#verify:end
+#
+#verify:sha1:08a40ac91f16a20048cb8c5e684eb2cd9951c501
+#verify:erase_literal:foo
+#verify:fail
+# Should pass.ffoooo
+#verify:end
+#
+#verify:sha1:
+#verify:fail
+# Should fail.
+#verify:end
+#
+#verify:sha1:08a40ac91f16a20048cb8c5e684eb2cd9951c501
+#verify:skip
+# Should pass.
+#verify:end
+#
+#verify:sha1:
+#verify:skip
+# Should fail.
+#verify:end
+
+class Section(object):
+  def __init__(self, start_line, prefix, algorithm, expected_hash, suffix):
+    self.start_line = start_line
+    self.prefix = prefix
+    self.algorithm = algorithm
+    self.suffix = suffix
+    self.expected_hash = expected_hash
+    self.hash = {}
+    for with_prefix in [False, True]:
+      self.hash[with_prefix] = hashlib.new(algorithm)
+    self.has_unknown_commands = False
+    self.special = None
+    self.transformations = []
+
+  def AddLine(self, with_prefix, line):
+    for func in self.transformations:
+      line = func(line)
+    if self.hash[with_prefix]:
+      self.hash[with_prefix].update(line)
+
+  def MissingPrefix(self):
+    self.hash[False] = None
+
+  def Digest(self, with_prefix):
+    the_hash = self.hash[with_prefix]
+    return the_hash and self.hash[with_prefix].hexdigest()
+
+
+class Expectation(object):
+
+  def __init__(self, actual_value, report_error):
+    self.actual_value = actual_value
+    self.report_error = report_error
+    self.want_ok = True
+    self.is_complete = False
+
+  def Not(self):
+    assert not self.is_complete
+    self.want_ok = not self.want_ok
+    return self
+
+  def ToSatisfy(self, predicate, description=None):
+    if description is None:
+      description = 'to satisfy a predicate'
+    self._End(predicate, description)
+
+  def ToMatch(self, pattern):
+    if self.want_ok:
+      match = re.match(pattern, self.actual_value)
+      self._End(lambda actual: match, 'to match %r', pattern)
+      return match
+    else:
+      self._End(lambda actual: re.match(pattern, actual),
+                'to match %r', pattern)
+
+  def ToEqual(self, expected_value):
+    self._End(
+        lambda actual: actual == expected_value,
+        'to equal %r', expected_value)
+
+  def ToBeTruthy(self):
+    self.ToSatisfy(bool, 'to be truthy')
+
+  def ToEndWith(self, suffix):
+    self._End(
+        lambda actual: actual.endswith(suffix),
+        'to end with %r', suffix)
+
+  def ToExist(self):
+    self.Not().ToBe(None)
+
+  def ToBe(self, expected_value):
+    self._End(
+        lambda actual: actual is expected_value,
+        'to be %r', expected_value)
+
+  def ToContain(self, expected_value):
+    self._End(
+        lambda actual: expected_value in actual,
+        'to contain %r', expected_value)
+
+  def ToBeIn(self, allowed_values):
+    self._End(
+        lambda actual: actual in allowed_values,
+        'to be a member of %r', allowed_values)
+
+  def _End(self, predicate, predicate_format, *args):
+    assert not self.is_complete
+    self.is_complete = True
+    try:
+      ok = bool(predicate(self.actual_value))
+    except:
+      ok = False
+    if ok != self.want_ok:
+      self._Fail(predicate_format, *args)
+
+  def _Fail(self, predicate_format, *args):
+    message = 'expected %r%s%s' % (
+        self.actual_value,
+        ' ' if self.want_ok else ' not ',
+        predicate_format % args)
+    self.report_error(message)
+
+class ErrorHandler(object):
+
+  def __init__(self):
+    self.__pending_expectation = None
+
+  def Expect(self, value):
+    if self.__pending_expectation:
+      if not self.__pending_expectation.is_complete:
+        self._BadExpectation('incomplete expectation')
+      self.__pending_expectation = None
+    self.__pending_expectation = Expectation(value, self._BadExpectation)
+    return self.__pending_expectation
+
+  def _BadExpectation(self, message):
+    raise RuntimeError(message)
+
+
+class App(ErrorHandler):
+
+  def Run(self, args):
+    self.exit_code = 0
+    for self.file_name in args.file:
+      with open(self.file_name) as stream:
+        self.errors = []
+        self.open_sections = {}
+        self.line_number = 0
+        for line in stream:
+          self.line_number += 1
+          self._ProcessLine(line)
+      self._EchoFileErrors()
+    sys.exit(self.exit_code)
+
+  def _ProcessLine(self, line):
+    m = re.match(r'^(.*\W)?verify:(\w+)(\W.*)?$', line)
+    if m:
+      prefix, command, suffix = m.groups()
+      self.section = self.open_sections.get(prefix)
+      if command in hashlib.algorithms:
+        match = self.Expect(suffix).ToMatch(r':(\w*)(.*)')
+        digest, section_suffix = match.groups()
+        self._BeginSection(prefix, command, digest, section_suffix)
+      else:
+        self.Expect(self.section).ToExist()
+        self.Expect(suffix).ToEndWith(self.section.suffix)
+        self.Expect(self.section.special).ToBeIn([None, 'fail', 'skip'])
+        if command == 'end':
+          self._EndSection(prefix, suffix)
+        elif command == 'erase_literal':
+          def transform(line):
+            return ''.join(line.split('foo'.strip()))
+          self.section.transformations.append(transform)
+        elif command in ['fail', 'skip']:
+          self.Expect(self.section.special).ToBe(None)
+          self.section.special = command
+        elif self.section:
+          self._UnknownCommand(command)
+      return
+
+    for section in self.open_sections.values():
+      before, prefix, after = line.partition(section.prefix or '')
+      if before:
+        section.MissingPrefix()
+      else:
+        section.AddLine(False, after)
+      section.AddLine(True, line)
+
+  def _BeginSection(self, prefix, algorithm, digest, suffix):
+    self.Expect(self.section).ToBe(None)
+    self.Expect(algorithm).ToBeIn(hashlib.algorithms)
+    self.Expect(prefix).Not().ToBeIn(self.open_sections)
+    self.section = Section(self.line_number, prefix, algorithm, digest, suffix)
+    self.open_sections[prefix] = self.section
+
+  def _EndSection(self, prefix, suffix):
+    del self.open_sections[prefix]
+    if self.section.special == 'skip': return
+    digest = self.section.Digest(True) #TODO(jrw)
+    line = self.section.start_line
+    if self.section.special == 'fail':
+      if digest == self.section.expected_hash:
+        self._ErrorAt(line, 'correct hash: %s' % digest)
+    else:
+      if digest != self.section.expected_hash:
+        self._ErrorAt(line, 'incorrect hash: %s' % digest)
+        self._ErrorAt(line, 'expected hash: %s' % self.section.expected_hash)
+
+  def _UnknownCommand(self, command):
+    self.section.has_unknown_commands = True
+
+  def _EchoFileErrors(self):
+    if self.errors:
+      self.errors.sort()
+      for line_number, message in self.errors:
+        sys.stdout.write('%s:%s: %s\n' % (self.file_name, line_number, message))
+    else:
+      sys.stdout.write('%s: OK\n' % self.file_name)
+
+  def _BadExpectation(self, message):
+    raise RuntimeError('%s:%s: %s' % (self.file_name, self.line_number, message))
+
+  def _ErrorAt(self, line_number, message):
+    self.exit_code = 1
+    self.errors.append((line_number, message))
+
+  def _Error(self, message):
+    self._ErrorAt(self.line_number, message)
+
+def main():
+  parser = argparse.ArgumentParser(description='')
+  parser.add_argument('--debug', action='store_true')
+  parser.add_argument('file', nargs='+', help='Files to process.')
+  args = parser.parse_args()
+  if args.debug:
+    logging.basicConfig(level=logging.DEBUG)
+    logging.debug('Debug logging enabled.')
+  App().Run(args)
+
+
+if __name__ == '__main__': main()

@@ -1,0 +1,57 @@
+# -*- mode: conf-unix; -*-
+
+[include]
+	path = ~/.gitconfig.local
+[user]
+	name = John Williams
+[color]
+	ui = auto
+[core]
+        autocrlf = false
+        filemode = false
+        pager = less
+	deltaBaseCacheLimit = 1G
+        excludesfile = ~/.gitignore
+[pager]
+        status = true
+[alias]
+        st = status --short
+        br = branch
+        ci = commit
+        co = checkout
+        ta = tag
+        mt = mergetool
+        rb = recent-branches
+        clst = cl status
+        change = diff --name-only --relative
+        ch = diff --name-only --relative
+        reup = rebase-update
+        clup = cl upload
+        clch = upstream-diff --name-only --relative
+        mbr = map-branches
+        updiff = upstream-diff
+        reco = rebase --continue
+        reskip = rebase --skip
+        pul = pull --no-edit
+[pull]
+        rebase = false
+[push]
+        default = matching
+
+#[pack]
+#        threads = 1
+
+#[diff]
+#        renameLimit = 10000
+[merge]
+        tool = kdiff3
+#        conflictstyle = diff3
+[mergetool "mymeld"]
+        cmd = meld --output=$MERGED --auto-merge $LOCAL $BASE $REMOTE
+        #cmd = meld --diff $BASE $LOCAL --diff $BASE $REMOTE --diff $LOCAL $BASE $REMOTE --output $MERGED
+[mergetool]
+	keepBackup = false
+[http]
+	cookiefile = /usr/local/google/home/jrw/.gitcookies
+[rerere]
+	enabled = true

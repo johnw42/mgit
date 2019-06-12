@@ -1,0 +1,42 @@
+#! /bin/bash
+
+IFS=
+app_id=icppfcnhkcmnfdhfhphakoifcfokfdhg
+wm_class=crx_$app_id
+
+with_app() {
+  local active_window=$(xdotool getactivewindow)
+  xdotool \
+    search --classname $wm_class \
+    windowactivate --sync \
+    $@
+  xdotool windowactivate $active_window
+}
+
+main() {
+  case $1 in
+    open)
+      if window_id=$(xdotool search --classname $wm_class); then
+        desktop_num=$(xdotool get_desktop)
+        xdotool set_desktop_for_window $window_id $desktop_num
+        xdotool search --sync --desktop $desktop_num --classname $wm_class
+        xdotool windowactivate $window_id
+      else
+        google-chrome-beta "--profile-directory=Profile 1" --app-id=$app_id
+      fi
+      ;;
+    playpause)
+      with_app key space
+      ;;
+    forward)
+      with_app key Right
+      ;;
+    back)
+      with_app key Left
+      ;;
+    *)
+      exit 1
+  esac
+}
+
+main "$@"

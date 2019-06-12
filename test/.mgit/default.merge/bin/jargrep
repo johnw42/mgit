@@ -1,0 +1,25 @@
+#! /usr/bin/env ruby
+
+def main
+  if ARGV.empty?
+    $stderr.puts "Usage: jargrep regexp filename..."
+    exit 1
+  end
+
+  pattern = Regexp.new(ARGV[0])
+  jar_files = ARGV[1..-1]
+  
+  #rd, wr = IO.pipe
+  jar_files.each do |jar_file|
+    IO.popen("-") do |f|
+      exec "jar", "tf", jar_file unless f
+      f.each_line do |entry|
+        if entry =~ pattern
+          puts "#{jar_file}: #{entry}"
+        end
+      end
+    end
+  end
+end
+
+main

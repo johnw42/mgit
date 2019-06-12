@@ -1,0 +1,4 @@
+#! /bin/bash
+
+cd "$(dirname "$1")"
+my-emacsclient -n -e '(visit-tags-table "TAGS")'

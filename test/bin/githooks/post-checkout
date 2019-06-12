@@ -1,0 +1,10 @@
+#! /bin/bash
+old_head=$1
+new_head=$2
+is_branch=$3
+if [[ $is_branch = 1 && $old_head != $new_head && -e $GIT_DIR/git5version &&
+      $(git name-rev --name-only --refs='refs/heads/*' $old_head) != undefined &&
+      $(git name-rev --name-only --refs='refs/tags/submitted/*' $old_head) == *^0 ]]; then
+  git5 cleanup -y
+fi
+exit 0

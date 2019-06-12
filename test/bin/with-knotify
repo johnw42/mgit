@@ -1,0 +1,9 @@
+#! /bin/bash
+
+if eval "$@"; then
+  knotify -a"$1" "Command succeeded."
+else
+  status=$?
+  knotify -a"$1" "Command failed."
+  exit $status
+fi

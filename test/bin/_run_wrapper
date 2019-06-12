@@ -1,0 +1,24 @@
+#! /bin/bash
+
+set -e -x
+exit 1
+
+cmd_name=${0##*/}
+pid_var_name=WRAPPER_PID_$cmd_name
+
+if [[ $PPID == ${!pid_var_name} ]]; then
+  unset ${pid_var_name}
+  echo "wrapped_cmd"
+else
+  echo "wrapper_launcher"
+  export ${pid_var_name}=$$
+  "${0%/*}/wrappers/${cmd_name}" "$@"
+fi
+
+# export RUN_WRAPPER_LEVEL
+# : ${RUN_WRAPPER_LEVEL=0}
+
+# if (( RUN_WRAPPER_LEVEL++ < 3 )); then
+#   echo $0
+#   _run_wrapper
+# fi

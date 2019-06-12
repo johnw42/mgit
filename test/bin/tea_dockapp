@@ -1,0 +1,144 @@
+#! /usr/bin/env python
+
+import os, sys
+if os.fork() != 0: sys.exit(0)
+
+DOCKAPP = False
+
+from Tkinter import *
+
+MENU_TIMES = 180, 210, 240, 270, 300
+DEFAULT_COLORS = "white", "black"
+FLASH_COLORS = ("black", "#FFFFFFFF0000"), ("#FFFFFFFF0000", "black")
+TIMEOUT_TIME = 60 * 60
+
+default_time = 60 * 4
+
+def timestr(seconds):
+    sign = " "
+    if seconds < 0: sign = "-"; seconds = -seconds
+    return "%s%d'%02d\"" % (sign, seconds // 60, seconds % 60)
+
+def flash():
+    global flashcount
+    print "flash", flashcount
+    setcolors(*FLASH_COLORS[flashcount % len(FLASH_COLORS)])
+    if flashcount > 0:
+        flashcount -= 1
+        root.after(150)
+    else:
+        callback()
+
+class Periodic(object):
+    def __init__(self, period):
+        self.ticker_id = None
+        self.period = period
+
+    def start(self, cycles):
+        self.stop()
+        self.start_time = cycles
+        self.current_time = cycles
+        self.ticker()
+
+    def stop(self):
+        if self.running:
+            root.after_cancel(self.ticker_id)
+            self.ticker_id = None
+
+    running = property(lambda self: self.ticker_id is not None)
+
+    def ticker(self):
+        self.ticker_id = root.after(self.period, self.ticker)
+        self.tick()
+        self.current_time -= 1
+
+    def tick(self):
+        raise NotImplementedError
+
+class Flasher(Periodic):
+    def __init__(self, display):
+        Periodic.__init__(self, 100)
+        self.display = display
+
+    def tick(self):
+        n = self.current_time
+        if n < 0:
+            self.stop()
+        else:
+            self.display.setColors(*FLASH_COLORS[n % len(FLASH_COLORS)])
+
+class Timer(Periodic):
+    def __init__(self, display):
+        Periodic.__init__(self, 1000)
+        self.display = display
+
+    def start(self, seconds):
+        global default_time
+        default_time = seconds
+        Periodic.start(self, seconds)
+
+    def tick(self):
+        self.display.setTime(self.current_time)
+        if self.current_time > 0:
+            progress = 1.0 - (float(self.current_time) / self.start_time)
+            r = (1.0-progress**1.5) * 0xFFFF + progress**1.5 * 0x9E9E
+            g = (1.0-progress**1.5) * 0xFFFF + progress**1.5 * 0x5858
+            b = (1.0-progress**0.5) * 0xFFFF + progress**0.5 * 0x0000
+            self.display.setColors("black", "#%04X%04X%04X" %  (r,g,b))
+        elif self.current_time == 0:
+            flasher.start(20)
+        elif not flasher.running:
+            self.display.setColors(*FLASH_COLORS[self.current_time % len(FLASH_COLORS)])
+
+        if self.current_time < -TIMEOUT_TIME:
+            reset()
+
+class DockappDisplay(object):
+
+  def __init__(self, parent):
+    parent.wm_maxsize(64,54)
+    text = Text(parent, cursor=root["cursor"])
+    text.bindtags((text,))
+    text.tag_config("label", font="Helvetica -12 bold", justify="center")
+    text.tag_config("time", font="Helvetica -20 bold", justify="center")
+    text.insert("end", "Timer\n", "label")
+    text.pack(fill="both", expand=1)
+    menu = Menu(root)
+    for time in MENU_TIMES:
+        menu.add_command(label=timestr(time), command = lambda t=time: timer.start(t))
+    #menu.add_command(label="Other...")
+    menu.add_separator()
+    menu.add_command(label="Stop timing", command=reset)
+    menu.add_separator()
+    menu.add_command(label="Close Menu")
+    text.bind("<1>", self.onClick1)
+    text.bind("<3>", lambda e: menu.post(e.x_root, e.y_root))
+
+    self.text = text
+
+  def setTime(self, seconds):
+      self.text.delete("end - 1 line linestart", "end")
+      self.text.insert("end", "\n" + timestr(seconds), "time")
+
+  def setColors(self, fg, bg):
+      self.text.config(foreground=fg, background=bg)
+
+  def onClick1(self, event):
+      if timer.running:
+          reset()
+      else:
+          timer.start(default_time)
+
+def reset():
+    flasher.stop()
+    timer.stop()
+    display.setColors(*DEFAULT_COLORS)
+    display.setTime(default_time)
+
+root = Tk()
+display = DockappDisplay(root)
+flasher = Flasher(display)
+timer = Timer(display)
+reset()
+#timer.start(int(60.0 * float(sys.argv[1])))
+root.mainloop()

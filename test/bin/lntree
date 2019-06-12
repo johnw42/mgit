@@ -1,0 +1,109 @@
+#! /bin/bash
+
+# This script is similar to lndir, but has some important extra features.
+
+APP=$(basename $0)
+
+usage() {
+  cat >&2 <<EOF
+Usage:
+  $APP [--replace-symlinks] [--replace-files] [--ignore=regex] [--] <src> [<dest>]
+
+  If <src> is a directory, behave analagously to lndir.
+  If <src> is a file, behave analagously to ln -s.
+
+  With no flags, $APP will never replace existing directory entries.  If
+  --replace-symlinks is given, it with overwrite existing symlinks.  If
+  --replace-files is given, any non-directory will be overwritten.
+EOF
+  exit $1
+}
+
+REPLACE_FILES=false
+REPLACE_SYMLINKS=false
+PIPE=cat
+while [[ "$1" = -* ]]; do
+  case "$1" in
+  --) shift; break;;
+  --replace-files) REPLACE_FILES=true;;
+  --replace-symlinks) REPLACE_SYMLINKS=true;;
+  --ignore=*)
+    PAT=${1#*=}
+    PIPE="$PIPE | egrep -v '/($PAT)/'";
+    PIPE="$PIPE | egrep -v '/($PAT)\$'";
+    ;;
+  --help) usage 0;;
+  *) usage 1;
+  esac
+  shift
+done
+
+case $# in
+1) SRC=$1; DEST=.;;
+2) SRC=$1; DEST=$2;;
+*) usage 1
+esac
+
+lnfile() {
+  if [[ -L "$2" ]]; then
+    # A link already exists at the destination; make sure it points to the
+    # right place.
+    OLDLINK=$(readlink "$2")
+    if [[ "$OLDLINK" != "$1" ]]; then
+      if $REPLACE_SYMLINKS || $REPLACE_FILES; then
+        echo "replacing symlink $2" >&2
+        ln -sf -- "$1" "$2"
+      else
+        echo "$APP: warning: cannot replace symlink $2" >&2
+        ERROR=1
+      fi
+    fi
+  elif [[ -d "$2" ]]; then
+    echo "$APP: warning: cannot replace directory $2" >&2
+    ERROR=1
+  elif [[ -f "$2" ]]; then
+    if $REPLACE_FILES; then
+      echo "replacing file $2" >&2
+      ln -sf -- "$1" "$2"
+    else
+      echo "$APP: warning: cannot replace file $2" >&2
+      ERROR=1
+    fi
+  else
+    # Normal case--silently create the link.
+    ln -s -- "$1" "$2"
+  fi
+}
+
+SRC=${SRC%/} # Remove a trailing /
+IFS=$'\n'
+if [[ -f "$SRC" ]]; then
+  if [[ -d "$DEST" ]]; then
+    DEST=$DEST/$(basename "$SRC")
+  fi
+  lnfile "$SRC" "$DEST"
+elif [[ -d "$SRC" ]]; then
+  if [[ ! -d "$DEST" ]]; then
+    if [[ -e "$DEST" ]]; then
+      mkdir "$DEST" || exit
+    fi
+  fi
+
+  # Link a whole tree.
+  for SRCDIR in $(find "$SRC" -type d | eval "$PIPE"); do
+    echo "$SRCDIR"
+    DESTDIR=$DEST${SRCDIR#$SRC}
+    mkdir -p $DESTDIR
+    for SRCFILE in $(find "$SRCDIR" -maxdepth 1 -not -type d | eval "$PIPE"); do
+      DESTFILE=$DEST${SRCFILE#$SRC}
+      lnfile "$SRCFILE" "$DESTFILE"
+    done
+  done
+else
+  echo "$APP: '$SRC' does not exist" >&1
+  exit 1
+fi
+
+exit $ERROR
+
+# vi:set ft=sh sw=2 expandtab :

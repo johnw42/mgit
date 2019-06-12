@@ -1,0 +1,120 @@
+#! /bin/bash
+
+set -e
+IFS='
+'
+this_script=$0
+bin_dir="${0%/*}"
+sudo_loop=
+
+xs60_haskell_cabal_update() {
+  $fast_mode || cabal update
+}
+
+xs70_haskell_cabal_install() {
+  cabal \
+    install -j16 \
+    HUnit \
+    QuickCheck \
+    hindent \
+    haskell-docs \
+    optparse-applicative \
+    split \
+    structured-haskell-mode
+}
+
+xs50_emacs25() {
+  mkdir -p ~/git
+  (
+    cd ~/git
+    if [[ ! -d emacs ]]; then
+      git clone git@github.com:johnw42/emacs.git
+    fi
+    if [[ ! -f ~/.local/bin/emacs ]]; then
+      cd emacs
+      git checkout homedir
+      sudo apt-get -y build-dep emacs24 || true
+      if [[ ! -f Makefile ]]; then
+        ./autogen.sh
+        ./configure \
+          --prefix=$HOME/.local \
+          --with-file-notification=inotify \
+          --without-pop \
+          --disable-dependency-tracking
+      fi
+      make -j32  # Too many => swapping!
+      make install
+      emacs --batch $bin_dir/../.emacs
+    fi
+  )
+}
+
+# Various Gnome/GTK settings.
+xs50_gtk() {
+  # Cause Chrome to show buttons of the left, as in Unity.
+  gconftool-2 \
+    --set /apps/metacity/general/button_layout \
+    --type string "close,maximize,minimize:"
+
+  # Use emacs theme for GTK keybindings.
+  gsettings set org.gnome.desktop.interface gtk-key-theme Emacs
+
+  # Get rid of crazy scrollbars.
+  gsettings set org.gnome.desktop.interface ubuntu-overlay-scrollbars false
+
+  # Use only the right Alt key for the HUD.
+  gconftool-2 --type string --set /apps/compiz-1/plugins/unityshell/screen0/options/show_hud Alt_R
+
+  # Don't use Alt key for menu items in gnome-termianl.
+  gconftool-2 --set /apps/gnome-terminal/global/use_mnemonics --type boolean false
+}
+
+kde_zap_global_key() {
+  local group=$1
+  local key=$2
+  local value=$(kreadconfig --file $config_file --group $group --key $key)
+  kwriteconfig --file $config_file --group $group --key $key none,${value#*,}
+}
+
+s50_kde() {
+  set -x
+  local config_file=$(kde4-config --path config --locate kglobalshortcutsrc)
+  kde_zap_global_key klipper clipboard_action
+  kde_zap_global_key klipper repeat_action
+  kde_zap_global_key kwin 'Activate Window Demanding Attention'
+}
+
+on_exit() {
+  true
+}
+
+main() {
+  local fast_mode=false
+  local subcmd=($this_script)
+  
+  while [[ $# != 0 ]]; do
+    case $1 in
+      --fast)
+        subcmd+=(--fast)
+        fast_mode=true
+        shift
+        ;;
+      *)
+        exit 1
+    esac
+  done
+
+  # Display results before exiting.
+  trap on_exit EXIT
+
+  # Run all steps.
+  for step in $(declare -pF | sed 's/.* //g' | egrep '^s[0-9]{2}_' | sort); do
+    printf '\033]2;%s\033\\' $step
+    (
+      cd $bin_dir
+      eval $step
+    )
+  done
+}
+
+main "$@"

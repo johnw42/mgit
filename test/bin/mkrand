@@ -1,0 +1,84 @@
+#! /usr/bin/env python
+# Random number generator.
+
+import sys
+import random
+import optparse
+
+def main():
+  p = optparse.OptionParser(usage="usage: %prog [options] <number-of-bits>")
+  p.add_option("-n", "--count", action="store", type="int", default=1,
+               help="set how many numbers to generate")
+  p.add_option("-d", "--decimal", "-s", "--signed",
+               action="store_const", dest="format", const="%d",
+               help="print output as signed decimal")
+  p.add_option("-u", "--unsigned",
+               action="store_const", dest="format", const="%u",
+               help="print output as unsigned decimal")
+  p.add_option("-x", "--hex",
+               action="store_const", dest="format", const="%x",
+               help="print output as unsigned hexadecimal")
+  p.add_option("-p", action="store_const", dest="pad", const=" ",
+               help="pad with leading spaces")
+  p.add_option("-0", action="store_const", dest="pad", const="0",
+               help="pad with leading zeros")
+  p.add_option("--rel-prime", action="store_true",
+               help="generate relatively prime random numbers")
+  p.add_option("--factor", action="append", type="int", default=[],
+               help="add a number to which the random number must be relatively prime" )
+  p.add_option("--seed", type="int")
+  opts, args = p.parse_args()
+
+  if len(args) != 1:
+    p.error("not enough arguments")
+
+  bits = int(args[0])
+  if bits <= 0:
+    p.error("number of bits must be greater than zero")
+
+  format = opts.format or "%u"
+  if opts.pad:
+    maxVal = 2 ** bits - 1
+    maxLen = len(format % maxVal)
+    if format[-1] == "d":
+      maxLen += 1
+    padSpec = str(maxLen)
+    if opts.pad == "0":
+      if format[-1] == "d":
+        padSpec = "+0" + padSpec
+      else:
+        padSpec = "0" + padSpec
+    format = "%" + padSpec + format[1:]
+
+  # Test whether two numbers are relatively prime.
+  def relativelyPrime(a, b):
+    if a == 0 or b == 0: return True
+    if a > b: return a % b == 0
+    if a < b: return b % a == 0
+    assert a == b
+    return False
+
+  # Start a list of factors/multiples that are not allowed.
+  factors = list(opts.factor)
+
+  # Test whether a random number is usable.
+  def isOK(value):
+    for factor in factors:
+      if relativelyPrime(value, factor):
+        return False
+    return True
+
+  random.seed(opts.seed)
+  for i in xrange(opts.count):
+    while True:
+      value = random.getrandbits(bits)
+      if isOK(value):
+        break
+    if opts.rel_prime:
+      factors.append(value)
+    if format[-1] == "d":
+      if value & (1 << (bits - 1)):
+        value = value | (-1 << bits)
+    print format % value
+
+main()

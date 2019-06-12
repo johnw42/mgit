@@ -1,0 +1,17 @@
+*.git/
+.emacs.desktop
+.emacs.desktop.lock
+*~
+*.pyc
+*.elc
+.#*
+WTF
+nogit/
+nogit_*
+
+/.emacs.d/*
+
+# For chrome:
+issue?????????_?????.diff
+
+*.rej

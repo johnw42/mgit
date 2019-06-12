@@ -1,0 +1,3 @@
+#! /bin/bash
+
+svnlocate "(class|interface|enum) $1"

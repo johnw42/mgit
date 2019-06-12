@@ -1,0 +1,47 @@
+#! /usr/bin/env zsh
+
+IFS=
+prog=$0
+
+main() {
+  if [[ $# == 0 ]]; then
+    run_as_root
+  else
+    run_as_user $1
+  fi
+}
+
+warn() {
+  echo "$(whoami): $@"
+}
+
+die() {
+  echo "$@" >&2
+  exit 1
+}
+
+run_as_root() {
+  if [[ $(whoami) != root ]]; then
+    die "must run as root"
+  fi
+  local user
+  for user in aarseth andy arnold brink finley jeremy john johnw kirk luke smonahan tjungen yshi; do
+    su -c "$prog $user" $user
+  done
+}
+
+run_as_user() {
+  if [[ $(whoami) != $1 ]]; then
+    die "must run as $1"
+  fi
+  cd
+  local dir
+  setopt -L nullglob
+  for dir in cvs/*; do
+    if [[ -e $dir/build && -e $dir/pom.xml ]]; then
+      warn "rm -rf ~/$dir/build"
+    fi
+  done
+}
+
+main $*

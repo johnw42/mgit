@@ -1,0 +1,44 @@
+#! /bin/bash
+
+# usage:
+#  relpath <base_dir> <path>
+#
+# Find a relative path from <base_dir> to <path>.  Returns an error
+# code if <base_dir> is not a parent directory of <path> or if either
+# <base_dir> or <path> is relative.  The output is an empty line if
+# <base_dir> and <path> are the same modulo trailing
+# slashes. Otherwise the output contains a leading slash iff
+# <base_dir> does not end with a slash.
+
+source bash_utils.sh
+init_bash_utils 2
+
+base=$1
+path=$2
+
+if [[ $base = */ ]]; then
+  base=${base%/}
+  suffix_slash=
+else
+  suffix_slash=/
+fi
+
+if [[ $base != /* || $path != /* ]]; then
+  exit 1
+elif [[ $path != /* ]]; then
+  echo $path
+elif [[ $base = ${path%/} ]]; then
+  echo ''
+elif [[ ${path%/} = $base/* ]]; then
+  echo $suffix_slash${path#$base/}
+elif [[ $base = ${path%/}/* ]]; then
+  result=
+  while [[ $base != ${path%/} ]]; do
+    result=$result/..
+    base=${base%/*}
+  done
+  echo $suffix_slash${result#/}
+else
+  # $base and $path are unrelated.
+  exit 1
+fi

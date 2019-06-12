@@ -1,0 +1,13 @@
+#! /bin/bash
+# Script used in conjunction with per_prompt.
+
+main() {
+  if [[ -f $XDG_RUNTIME_DIR/jrw/last_prompt ]]; then
+    echo $(($(date +%s) - $(date +%s -r $XDG_RUNTIME_DIR/jrw/last_prompt)))
+  else
+    echo 0
+    return 1
+  fi
+}
+
+main

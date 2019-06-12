@@ -1,0 +1,44 @@
+#! /bin/bash
+
+# Keep a log of the output and execution environment of a command.
+
+daystr=$(date +%Y-%m-%d)
+logfilebase=log
+logdirbase=$HOME/.runlog.d
+logdir=$logdirbase/$daystr
+logfile=$logdir/$logfilebase
+envfile=$(tempfile -d "$logdir" -s .env -p log)
+basepath=${envfile%.env}
+prefix="$(date +'%Y-%m-%d %H:%M:%S') $daystr/$(basename "${envfile%.env} $PPID")"
+
+if [[ $# = 0 ]]; then
+  exec cat "$logdirbase"/*/"$logfilebase"
+elif [[ $1 == -f ]]; then
+  exec tail -f "$logfile"
+elif [[ $1 = --clean ]]; then
+  exec find "$logdirbase" -mindepth 1 -maxdepth 1 -type d -mtime +7 -exec rm -rf {} \;
+fi
+
+mkdir -p "$logdir"
+ln -sf "$daystr/$logfilebase" "$logdirbase/$logfilebase"
+
+env | sort >"$envfile"
+
+if [[ $1 = -m ]]; then
+  echo "$prefix: $2" >>"$logfile"
+  shift 2
+fi
+
+if [[ $# != 0 ]]; then
+  eval "$@" >"$basepath.out" 2>"$basepath.err" &
+  echo "$prefix: pid=$! $*" >>"$logfile"
+fi
+
+ps -f -u $EUID >"$basepath.ps"
+pstree -a -p -l -u >"$basepath.pstree"
+
+if [[ $# != 0 ]]; then
+  wait "$!"
+  exit=$?
+  echo "$exit" >"$basepath.exit"
+fi

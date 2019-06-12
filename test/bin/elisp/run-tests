@@ -1,0 +1,20 @@
+#! /bin/bash
+
+IFS=
+cd $(dirname $0)
+
+run_test() {
+  #echo $1
+  # UNIT_TEST_NAME=$1 emacs --batch --directory . --eval "(require 'unit-test-runner)" --eval "(unit-test-run)"  $1 2>&1 | awk 'x { print }; /^START$/ { x = 1 }'
+  export UNIT_TEST_NAME=$1
+  export UNIT_TEST_MESSAGE_PREFIX='EUNIT: '
+  emacs23 --batch --directory . --eval "(require 'unit-test-runner)" --eval "(unit-test-run)"  $1 2>&1 | sed '/^EUNIT: /!d; s/^EUNIT: //'
+}
+
+if [[ $# == 0 ]]; then
+  set -- *-test.el
+fi
+
+for name; do
+  run_test $name
+done

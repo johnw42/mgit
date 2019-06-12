@@ -1,0 +1,10 @@
+#! /usr/bin/env ruby
+
+cls = ARGV[0]
+clsRegex = '(?:[a-zA-Z0-9_$.]+.)?' + cls
+for line in `svnlocate '(extends|implements|new) #{cls}'`
+  if (line =~ /(?:implements|extends)(?:.*,)* *#{clsRegex}/ ||
+      line =~ /new +#{clsRegex}\(.*\) *\{$/)
+    print line
+  end
+end

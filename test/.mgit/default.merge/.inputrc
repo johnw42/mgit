@@ -1,0 +1,48 @@
+# In all programs, all terminals, make sure this is bound.
+"\C-x\C-r": re-read-init-file
+
+set show-all-if-unmodified on
+#set bind-tty-special-chars off
+#"\C-z": "CZ"
+
+$if term=cygwin
+"\e[1~": beginning-of-line
+"\e[4~": end-of-line
+"\e[3~": forward-backward-delete-char
+"\e[5~": backward-word
+"\e[6~": forward-word
+$else
+"\e[1;3C": forward-word
+"\e[1;3D": backward-word
+# "\e[7~": beginning-of-line
+# "\e[8~": end-of-line
+# "\e[3~": forward-backward-delete-char
+# "\eOd": backward-word
+# "\eOc": forward-word
+# "\e[1;5D": backward-word
+# "\e[1;5C": forward-word
+# "\e[3;5~": kill-word
+# "\e[3;3~": kill-word
+# "\b": backward-kill-word
+#C-Rubout: backward-kill-word
+$endif
+
+# For Bash, all terminals, add some Bash specific hacks.
+$if Bash
+"\C-xv": show-bash-version
+"\C-x\C-e": shell-expand-line
+
+# Edit variable on current line.
+"\C-x\C-v": "\C-a\C-k$\C-y\C-x\C-e\"\C-a\C-y=\""
+
+TAB: complete
+$if term=cygwin
+set completion-ignore-case on
+$endif
+
+"\C-x\C-f": "\C-afind-file "
+$endif
+
+# Local Variables:
+# mode: conf-colon
+# End:

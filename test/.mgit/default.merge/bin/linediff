@@ -1,0 +1,45 @@
+#! /usr/bin/python
+import argparse
+import logging
+import os
+import re
+import subprocess
+import sys
+from tempfile import NamedTemporaryFile
+
+
+class App(object):
+
+  def Run(self, args):
+    tempfiles = []
+    try:
+      for filename in args.filename:
+        with open(filename, 'rb') as input:
+          tempfile = NamedTemporaryFile(delete=False)
+          tempfiles.append(tempfile)
+          for line in input:
+            for char in line:
+              if char == '\n':
+                tempfile.write('\\n\n')
+              else:
+                tempfile.write('%s\n' % char)
+          tempfile.close()
+      subprocess.call(['diff', '-u', tempfiles[0].name, tempfiles[1].name])
+    finally:
+      for tempfile in tempfiles:
+        try:
+          os.unlink(tempfile.name)
+        except:
+          pass
+
+def main():
+  parser = argparse.ArgumentParser(description='')
+  parser.add_argument('--debug', action='store_true')
+  parser.add_argument('filename', nargs=2)
+  args = parser.parse_args()
+  if args.debug:
+    logging.basicConfig(level=logging.DEBUG)
+  App().Run(args)
+
+
+if __name__ == '__main__': main()

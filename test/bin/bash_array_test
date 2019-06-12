@@ -1,0 +1,30 @@
+#! /bin/bash
+
+set -x
+array=(first second third)
+i=1
+: '${array[0]}' "${array[0]}"
+: '${array[1]}' "${array[1]}"
+: '${array[2]}' "${array[2]}"
+: '${array[3]}' "${array[3]}"
+: '${array[4]}' "${array[4]}"
+: '${array[-1]}' "${array[-1]}"
+: '${array[-2]}' "${array[-2]}"
+: '${array[-3]}' "${array[-3]}"
+: '${array[@]:0}' "${array[@]:0}"
+: '${array[@]:1}' "${array[@]:1}"
+: '${array[@]:0:0}' "${array[@]:0:0}"
+: '${array[@]:1:1}' "${array[@]:1:1}"
+: '${array[@]:0:0}' "${array[@]:0:0}"
+: '${array[@]:1:10}' "${array[@]:1:10}"
+: '${array[*]}' "${array[*]}"
+: '${array[@]}' "${array[@]}"
+: '${!array[1]}' "${!array[1]}"
+: '${!array[*]}' "${!array[*]}"
+: '${!array[@]}' "${!array[@]}"
+: '${#array[1]}' "${#array[1]}"
+: '${#array[*]}' "${#array[*]}"
+: '${#array[@]}' "${#array[@]}"
+: '${array[@]%d}' "${array[@]%d}"
+: '${array[@]#[fst]}' "${array[@]#[fst]}"
+: '${array[@]/[aeiou]/_}' "${array[@]/[aeiou]/_}"

@@ -1,0 +1,18 @@
+#! /bin/bash
+
+emacs_version=23
+
+sudo aptitude -y install \
+  kteatime \
+  emacs$emacs_version \
+  emacs$emacs_version-el \
+  emacs-goodies-el \
+  emacs-goodies-extra-el \
+  erlang-mode \
+  js2-mode \
+  nxml-mode \
+  org-mode \
+  python-mode \
+  pyrex-mode \
+  yaml-mode \
+  synaptic

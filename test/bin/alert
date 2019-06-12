@@ -1,0 +1,113 @@
+#! /usr/bin/env python
+
+import Tkinter, sys, re
+import os, getopt, signal, time
+
+LOGFILE = os.path.expanduser("~/.alertlog")
+
+log = file(LOGFILE, "w")
+
+bg = "blue"
+fg = "white"
+error = 0
+wait = False
+command = None
+
+def usage(error):
+    print >> sys.stderr, """\
+Usage:  %s [options] [message]
+
+Possible options:
+-e N, --error=N   Use blue background if N=0, red otherwise;
+                  return exit code N.
+-c "command"      Run command; implies -w.  Return exit code of command.
+-f, --fork        Fork a new process and return immediately (default).
+-w, --wait        Wait for user to dismiss dialog before returning.
+--fg=COLOR        Set foreground color.
+--bg=COLOR        Set background color.
+
+Example:
+  long_running_command; alert -e $? && another_command; alert 'All done!'""" \
+        % os.path.basename(sys.argv[0])
+    sys.exit(error)
+
+try:
+    opts, args = getopt.getopt(sys.argv[1:], "fwe:c:",
+                               ["error=", "fg=", "bg=", "fork", "wait"])
+except getopt.GetoptError:
+    usage(1)
+
+for opt, arg in opts:
+    if opt in ("-e", "--error"):
+        if arg == "0": bg = "blue"
+        else: bg = "red"
+        error = int(arg)
+    elif opt in ("-f", "--fork"):
+        wait = False
+    elif opt in ("-w", "--wait"):
+        wait = True
+    elif opt == "-c":
+        command = arg
+        wait = True
+    elif opt == "--fg": fg = arg
+    elif opt == "--bg": bg = arg
+
+if args:
+    message = [" ".join(args)]
+else:
+    text = os.getcwd()
+    realpath = os.path.realpath(text)
+    home = os.path.realpath(os.path.expanduser("~"))
+    if realpath.startswith(home):
+        text = "~" + realpath[len(home):]
+    if command:
+        message = ["[%s]" % text, command]
+    else:
+        message = [text]
+
+log.write("%s [%d] starting %s\n" %
+    (time.asctime(), os.getpid(), " ".join(message)))
+
+if command:
+    error = os.system(command)
+    fg = "white"
+    if error:
+        bg = "red"
+    else:
+        bg = "blue"
+
+if wait or os.fork() == 0:
+    top = Tkinter.Tk()
+    frame = Tkinter.Frame(top, background=bg)
+    frame.pack()
+    if error:
+        signals = {}
+        for key, value in signal.__dict__.iteritems():
+            if key[:3] == "SIG" and key[3] != "_":
+                signals[value] = key
+        sigNo = error - 127
+        if sigNo in signals:
+            message.append("error %d [%s]" % (error, signals[sigNo]))
+        else:
+            message.append("error %d" % error)
+    labelText = "\n" + "\n".join(["  %s  " % line for line in message]) + "\n"
+    if len(message) == 1:
+        fontSize = 36
+    else:
+        fontSize = 24
+    label = Tkinter.Label(
+        frame, font="Helvetica %d" % fontSize, text=labelText,
+        background=bg, foreground=fg)
+    label.pack()
+    # Don't allow the user to dismiss the dialog for 500ms so if the user is
+    # typing something when the box is openend it won't be immediately closed.
+    def do_bindings(*args):
+        for event in "<1>", "<Key>":
+            top.bind(event, lambda event: sys.exit(error))
+    top.after(500, do_bindings)
+    top.mainloop()
+    log.write("%s [%d] finished %s\n" %
+        (time.asctime(), os.getpid(), " ".join(message)))
+
+
+sys.exit(error)

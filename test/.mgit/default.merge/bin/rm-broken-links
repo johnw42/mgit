@@ -1,0 +1,24 @@
+#! /usr/bin/env ruby
+# Script to delete broken symlinks in a directory tree.
+
+require 'find'
+
+if ARGV.empty?
+  $stderr << <<EOF
+Usage: #{File.basename $0} path...
+EOF
+  exit 1
+end
+
+ARGV.each do |arg|
+  Find.find arg do |path|
+    if File.symlink?(path) && !File.exist?(path)
+      puts path
+      begin
+        File.delete path
+      rescue
+        $stderr.puts $!
+      end
+    end
+  end
+end

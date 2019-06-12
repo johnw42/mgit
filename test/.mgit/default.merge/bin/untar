@@ -1,0 +1,149 @@
+#! /usr/local/bin/python
+
+import sys
+import getopt
+import os
+import optparse
+import readline
+
+
+Suffixes = [ (".tar",     "tar -xf"),
+             (".tar.gz",  "tar -zxf"),
+             (".tgz",     "tar -zxf"),
+             (".tar.bz2", "tar -jxf"),
+             (".tbz2",    "tar -jxf"),
+             (".tbz",     "tar -jxf"),
+             (".tar.Z",   "tar -Zxf"),
+             (".tz",      "tar -Zxf"),
+             (".zip",     "jar -x"),
+             (".jar",     "jar -x") ]
+
+
+class ExtractionError(Exception): pass
+
+
+def fail(message):
+    sys.stderr.write(message + "\n")
+    raise ExtractionError()
+
+
+def parseOptions():
+    p = optparse.OptionParser("""\
+usage: %prog [options] file...
+
+Extract archive files created with tar, gzip, bzip2 and compress.  All
+files are extracted to a single directory named after the basename of
+the archive, which must not yet exist.""")
+    p.add_option("-o", "--output", action="store",
+                 help="Place output in <dir> instead of the directory where "
+                 "the archive is located.")
+    p.add_option("--here", action="store_const", const=".", dest="output",
+                 help="equivalent to --output=.")
+    p.add_option("--dryrun", action="store_true",
+                 help="only print names of directories to be created")
+    p.add_option("-y", "--force", action="store_true",
+                 help="assume 'yes' for all queries")
+
+    global options
+    options, args = p.parse_args()
+
+    if len(args) == 0:
+        p.error("missing file argument")
+
+    return args
+
+
+def askYN(prompt):
+    if options.force:
+        return True
+    text = raw_input(prompt + " (y/n) ")
+    return text.lower().startswith("y")
+
+
+def analyzeFilename():
+
+    global outputDir, tar, tarFlags
+
+    # Find the type of the input file.
+    for suffix, command in Suffixes:
+        if inputFile[-len(suffix):] == suffix:
+            tar, tarFlags = command.split(" ", 1)
+            outputDir = inputFile[:-len(suffix)]
+            break
+    else:
+        fail("can't determine archive type from file name: %s" % inputFile)
+
+    # Find the name of the output directory.
+    if options.output:
+        outputDir = os.path.join(options.output, os.path.basename(outputDir))
+        outputDir = os.path.normpath(outputDir)
+
+
+def makeOutputDir():
+    if os.path.exists(outputDir):
+        fail("directory %s already exists" % outputDir)
+    try:
+        os.mkdir(outputDir)
+    except OSError:
+        fail("can't create directory %s" % outputDir)
+
+
+def extractFiles():
+    oldCwd = os.getcwd()
+    file = os.path.abspath(inputFile)
+    os.chdir(outputDir)
+    try:
+        n = os.spawnlp(os.P_WAIT, tar, tar, tarFlags, file)
+        if n != 0:
+            fail("%s returned error code %d; giving up" % (tar, n))
+    finally:
+        os.chdir(oldCwd)
+
+
+def checkForSingleFile():
+    global outputDir
+    
+    # If the output directory contains just one directory, move the contents
+    # of that directory into the output directory itself.
+    files = os.listdir(outputDir)
+    if len(files) == 1:
+        originalName = files[0]
+        if os.path.basename(outputDir) != originalName:
+            if options.force:
+                print >> sys.stderr, "warning: original directory name was", originalName
+            elif askYN("Rename output directory to '%s'?" % originalName):
+                newOutputDir = os.path.join(os.path.dirname(outputDir), originalName)
+                os.rename(outputDir, newOutputDir)
+                outputDir = newOutputDir
+        subdir = os.path.join(outputDir, originalName)
+        if os.path.isdir(subdir):
+            # Yes, there is just one directory in the output directory.
+            # First we need to find a name not in the output directory's
+            # subdirectory.
+            files = os.listdir(subdir)
+            if not files:
+                return
+            files.sort()
+            uniqueName = os.path.join(outputDir, files[-1] + "_")
+            os.rename(subdir, uniqueName)
+            for file in files:
+                os.rename(os.path.join(uniqueName, file),
+                          os.path.join(outputDir, file))
+            os.rmdir(uniqueName)
+
+
+for inputFile in parseOptions():
+    try:
+        analyzeFilename()
+        print outputDir
+        if not options.dryrun:
+            makeOutputDir()
+            try:
+                extractFiles()
+                checkForSingleFile()
+            except:
+                # Clean up temporary files.
+                subprocess.call(["rm", "-rf", outputDir])
+                raise
+    except ExtractionError:
+        pass

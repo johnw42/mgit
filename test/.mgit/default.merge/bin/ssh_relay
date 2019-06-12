@@ -1,0 +1,33 @@
+#! /bin/bash
+
+set -x
+IFS=
+remoteHost=$1
+lockFile=/tmp/ssh_relay.$USER.$remoteHost
+
+# See if ssh_relay is already running.
+if [[ -f $lockFile ]]; then
+  pid=$(cat $lockFile)
+  if [[ $(readlink /proc/$pid/fd/3) == $lockFile ]]; then
+    echo "Relay is already running with pid=$pid."
+    exit 0
+  fi
+fi
+
+# Create lock file to keep new instance of SSH from starting.  Keep
+# the lock file open as a reliable way to detect that the process that
+# created it is still running.
+chmod 600 $lockFile
+echo $$ >$lockFile
+exec 3>>$lockFile
+chmod 400 $lockFile
+
+# Delete the lock file on exit.
+trap "rm -f '$lockFile'" EXIT
+
+# Try to keep an ssh connection open.
+echo "Opening port 22000 on $remoteHost..."
+while true; do
+  ssh -o "Compression no" -R "22000:localhost:22" -N $remoteHost
+  sleep 5
+done

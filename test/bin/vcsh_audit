@@ -1,0 +1,18 @@
+#! /bin/bash
+
+: ${1:?missing repo names}
+
+# Audit files that are in git but shouldn't be.
+cd
+for repo; do
+  if vcsh list | fgrep -qx $repo; then
+    vcsh "$repo" ls-files -i --exclude-standard |
+    sed "1s:^:vcsh $repo rm --cached :
+2,\$s:^:    :
+\$!s:\$: \\\\:"
+  fi
+done
+
+# Local Variables:
+# sh-basic-offset: 2
+# End:

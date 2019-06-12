@@ -1,0 +1,53 @@
+#! /usr/bin/env python
+
+import argparse
+import sys
+
+CHUNK_SIZE = 4096
+
+class Counter(object):
+
+  def __init__(self, args):
+    self.chars = args.chars
+    self.count_runs = args.count_runs
+    self.counts = [0] * 256
+
+  def UpdateCounts(self, stream):
+    prev_byte = None
+    while True:
+      data = stream.read(CHUNK_SIZE)
+      if data == '': break
+      for byte in data:
+        count_this_byte = True
+        if self.chars is not None and byte not in self.chars:
+          count_this_byte = False
+        if self.count_runs and byte == prev_byte:
+          count_this_byte = False
+        if count_this_byte:
+          self.counts[ord(byte)] += 1
+        prev_byte = byte
+
+  def Print(self):
+    for i, count in enumerate(self.counts):
+      if count != 0:
+        print '{0:3d} {0:2x} {1!r:6} {2}'.format(i, chr(i), count)
+
+def main():
+  p = argparse.ArgumentParser(
+    'count how may of each byte occurs in the input')
+  p.add_argument('file', nargs='+')
+  p.add_argument('--chars', help='set characters to count')
+  p.add_argument(
+    '--count-runs', action='store_true',
+    help='counts runs of the same byte as a single instance')
+  args = p.parse_args()
+  counter = Counter(args)
+  for filename in args.file:
+    if filename == '-':
+      counter.UpdateCounts(sys.stdin)
+    else:
+      with file(filename, 'rb') as stream:
+        counter.UpdateCounts(stream)
+  counter.Print()
+
+main()

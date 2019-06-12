@@ -1,0 +1,134 @@
+#! /usr/bin/env python
+
+import argparse
+from contextlib import closing
+import os
+import re
+import subprocess
+import sys
+import tempfile
+
+class FatalError(Exception): pass
+
+class App(object):
+
+  def __init__(self, args):
+    self.files = args.files
+    self.keep_going = args.keep_going
+    self.fixed_strings = args.fixed_strings
+    self.warning_count = 0
+    pattern = args.pattern
+    replacement = args.replacement
+    if args.reverse:
+      pattern, replacement = replacement, pattern
+    self.pattern = re.compile(
+        re.escape(pattern) if args.fixed_strings else pattern)
+    self.replacement = replacementq
+
+  def Run(self):
+    try:
+      self._CheckFiles()
+      self._CheckErrors()
+      self._ProcessFiles()
+      self._CheckErrors()
+      return 0
+    except FatalError:
+      sys.stderr.write('aborting because of errors\n')
+      return 1
+
+  def _TransformFileContent(self, input_stream, output_stream):
+    for line in input_stream:
+      line = self.pattern.sub(self.replacement, line)
+      output_stream.write(line)
+
+  def _ProcessOneFile(self, path):
+    dir_name = os.path.dirname(path)
+    temp_file = tempfile.NamedTemporaryFile(
+        suffix='~~', dir=dir_name, mode='w+t')
+    with closing(temp_file):
+      with file(path, 'rt') as input_stream:
+        self._TransformFileContent(input_stream, temp_file)
+      temp_file.flush()
+      subprocess.call(['diff', '-u', path, temp_file.name])
+
+  def _ProcessFiles(self):
+    for path in list(self.files):
+      self._ProcessOneFile(path)
+
+  def _CheckFiles(self):
+    for path in list(self.files):
+      if not os.path.exists(path):
+        self._WarnFile(path, 'no such file')
+        continue
+      if not os.path.isfile(path):
+        self._WarnFile(path, 'not a regular file')
+        continue
+      if not os.access(path, os.R_OK):
+        self._WarnFile(path, 'file is not readable')
+        continue
+      if not os.access(path, os.W_OK):
+        self._WarnFile(path, 'file is not writable')
+        continue
+
+  def _CheckErrors(self):
+    if self.warning_count > 0 and not self.keep_going:
+      raise FatalError()
+
+  def _WarnFile(self, path, message):
+    sys.stderr.write('{}: {}\n'.format(path, message))
+    self.warning_count += 1
+    self.files.remove(path)
+
+def main():
+  p = argparse.ArgumentParser("""\
+PATTERN is a Python/Perl-style regular expression.  REPLACEMENT may
+contain backreferences (\\1, \\2, etc.)
+""")
+  p.add_argument(
+      'pattern', metavar='PATTERN',
+      help='the pattern to be replacemed')
+  p.add_argument(
+      'replacement', metavar='REPLACEMENT',
+      help='the replacement string to use; '
+      'may contain back references (\\1, \\&, etc.)')
+  p.add_argument(
+      'files', metavar='FILE', nargs='+',
+      help='files to updated')
+  p.add_argument(
+      "-i", "--backup-suffix", metavar="SUFFIX",
+      help="create backup file by appending SUFFIX (like perl -i)")
+  p.add_argument(
+      "-F", "--fixed-strings", action="store_true",
+      help="treat PATTERN and REPLACEMENT as literal strings (like grep -F)")
+  p.add_argument(
+      '--reverse', action='store_true',
+      help='invert the meaning of PATTERN and REPLACEMENT (implies -F)')
+  p.add_argument(
+      "-R", "-r", "--recursive", action="store_true",
+      help="process directories recursively")
+  p.add_argument(
+      "-l", "--count-changed-lines", action="store_true",
+      help="print the number of lines changed in each file")
+  p.add_argument(
+      "--force", action="store_true",
+      help="ignore sanity checks")
+  p.add_argument(
+      "-n", "--diff", action="store_true",
+      help="write a diff to standard out; don't modify any files")
+  p.add_argument(
+      "-L", "--dereference", action="store_true",
+      help="follow symlinks")
+  p.add_argument(
+      "-k", "--keep-going", action="store_true",
+      help="continue procressing of some files fail santity checks")
+  p.add_argument(
+      '--backup-file',
+      help='set the backup file to create (may be /dev/null)')
+  args = p.parse_args()
+
+  if args.reverse:
+    args.fixed_strings = True
+
+  sys.exit(App(args).Run())
+
+main()

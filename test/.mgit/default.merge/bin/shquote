@@ -1,0 +1,19 @@
+#! /bin/bash
+
+# Skips the first argument, which must be --, then outputs all
+# remaining arguments with shell quoting, separated by spaces and
+# followed by a newline.  Outputs an empty line when -- is the only
+# argument.
+
+if [[ $1 != -- ]]; then
+  echo "\$1 must be --" >&2
+  exit 1
+fi
+
+shift
+fmt='%q'
+for arg; do
+  printf "$fmt" "$arg"
+  fmt=' %q'
+done
+printf '\n'

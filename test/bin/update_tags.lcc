@@ -1,0 +1,20 @@
+#! /bin/bash
+
+IFS=
+
+echo update_tags $*
+
+case $1 in
+'')
+    find ~/cvs/. -name pom.xml -exec $0 root {} \; -prune
+    find ~/cvs/. -name build.xml -exec $0 leaf {} \;
+    ;;
+root)
+    cd $(dirname $2)
+    find -name pom.xml | sed 's/\/[^/]*$//' | xargs -n100 ctags -e
+    ;;
+leaf)
+    cd $(dirname $2)
+    ctags -e .
+    ;;
+esac

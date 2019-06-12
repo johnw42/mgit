@@ -1,0 +1,73 @@
+#! /usr/bin/env python
+# -*- mode: python; py-indent-offset: 4 -*-
+import sys
+import subprocess as popen
+import collections
+import os
+import re
+
+def compile_pattern():
+    fields = [
+        r"\S+", # 1 - permissions
+        r"\S+", # 2 - zip version
+        r"\S+", # 3 - zip OS
+        r"\d+", # 4 - original size
+        r"\S+", # 5 - zip flags
+        r"\d+", # 6 - compressed size
+        r"\S+", # 7 - compression method
+        r"\S+", # 8 - modification date
+        r"\S+", # 9 - modification time
+        r"\S.+" # 10 - name
+        ]
+    pattern = "^" + " +".join("(" + f + ")" for f in fields) + "\n"
+    return re.compile(pattern)
+
+PATTERN = compile_pattern()
+
+def main():
+    if len(sys.argv) == 1:
+        analyze_output(sys.stdin)
+    if len(sys.argv) == 2:
+        sizes = collections.defaultdict(int)
+        analyze_file(sys.argv[1], sizes)
+        print_sizes(sizes)
+    elif len(sys.argv) == 3:
+        sizes = collections.defaultdict(int)
+        analyze_file(sys.argv[1], sizes)
+        analyze_file(sys.argv[2], sizes, -1)
+        print_sizes(sizes)
+
+
+def analyze_file(filename, sizes, multiplier=1):
+    proc = popen.Popen(["zipinfo", "-l", filename], stdout=popen.PIPE)
+    analyze_output(proc.stdout, sizes, multiplier)
+    proc.wait()
+
+
+def analyze_output(stream, sizes, multiplier):
+    for line in stream:
+        m = PATTERN.match(line)
+        if not m: continue
+        size = int(m.group(6))
+        path = m.group(10)
+        for path in path_ancestors(path):
+            sizes[path] += size * multiplier
+
+
+def print_sizes(sizes):
+    for size, path in sorted(zip(sizes.values(), sizes.keys())):
+        if size != 0:
+            print("{0:10} {1}".format(size, path))
+    
+
+def path_ancestors(path):
+    if path.endswith("/"):
+        for path in path_ancestors(path[:-1]):
+            yield path
+    
+    while True:
+        yield path
+        if not path: break
+        path = os.path.dirname(path)
+
+if __name__ == "__main__": main()

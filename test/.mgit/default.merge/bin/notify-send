@@ -1,0 +1,30 @@
+#! /usr/bin/python
+"""Wrapper for notify-send.
+
+"""
+
+import subprocess
+import os
+
+from jrw import wrapper
+
+def main():
+  try:
+    if (os.getenv('CHROME_REMOTE_DESKTOP_SESSION') and
+        os.getenv('DISPLAY') != ':0'):
+      desktop_env = {}
+      desktop_env.update(os.environ)
+      desktop_env['DISPLAY'] = ':0'
+      idle_time = int(subprocess.check_output(['xprintidle']))
+      desktop_idle_time = int(subprocess.check_output(
+        ['xprintidle'], env=desktop_env))
+      SLOP_MILLISECONDS = 250
+      if desktop_idle_time < idle_time + SLOP_MILLISECONDS:
+        os.environ['DISPLAY'] = ':0'
+  except OSError:
+    pass
+    
+  wrapper.ExecWrappedProgram()
+
+if __name__ == '__main__':
+  main()

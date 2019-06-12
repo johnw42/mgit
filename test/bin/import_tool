@@ -1,0 +1,245 @@
+#! /usr/bin/python
+import argparse
+import logging
+import os
+import re
+import subprocess
+import sys
+import bisect
+
+
+class Buffer(object):
+
+  def __init__(self, content=''):
+    self.content = content
+    self.markers = []
+
+  def Insert(self, position, text):
+    self.Splice(position, position, text)
+
+  def Delete(self, start, end):
+    self.Splice(start, end, '')
+
+  def Splice(self, start, end, to_insert):
+    if not (0 <= start <= end <= len(content)):
+      raise ValueError('Invalid start end end: %r..%r' % (start, end))
+    self.content = self.content[:start] + to_insert + self.content[end:]
+    delta = end - start + len(to_insert)
+    for marker in self.markers:
+      if marker.position < start:
+        pass
+      elif marker.position >= end:
+        marker.position += delta
+      elif start <= marker.position < end:
+        if marker.advance:
+          marker.position = start + len(to_insert)
+        else:
+          marker.position = start
+
+  def Marker(self, position, advance):
+    return Marker(self, position, advance)
+
+
+class Marker(object):
+
+  def __init__(self, buffer, position, advance):
+    self.buffer = buffer
+    self.position = position
+    self.advance = bool(advance)
+
+
+class Import(object):
+
+  def __init__(self, name, start, end):
+    self.name = name
+    self.start = start
+    self.end = end
+
+  def __str__(self):
+    return self.name
+
+
+class ImportGroup(object):
+
+  def __init__(self):
+    self.imports = []
+
+  def __str__(self):
+    return '[' + ', '.join(map(str, self.imports)) + ']'
+
+  def Append(self, stmt):
+    self.imports.append(stmt)
+
+
+class Scanner(object):
+
+  def __init__(self, data):
+    self.data = data
+    self.offset = 0
+    self.match = None
+    self._cache = {}
+
+  def SkipLiteral(self, literal):
+    if self.data[self.offset:].startswith(literal):
+      self.offset += len(literal)
+      return True
+    return False
+
+  def FindAndSkipLiteral(self, literal):
+    index = self.data.find(literal, self.offset)
+    if index != -1:
+      self.offset = index + len(literal)
+      return True
+    return False
+
+  def SkipRE(self, pattern):
+    return self._SaveMatch(
+        self._GetRE(pattern).match(self.data, self.offset))
+
+  def FindAndSkipRE(self, pattern):
+    return self._SaveMatch(
+        self._GetRE(pattern).find(self.data, self.offset))
+
+  def _PrintMatch(self, text):
+    #print 'Matched %r, now at %d' % (text, self.offset)
+    pass
+
+  def _SaveMatch(self, match):
+    self.match = match
+    if match:
+      self.offset = match.end()
+      return True
+    return False
+
+  def _GetRE(self, pattern):
+    expr = self._cache.get(pattern)
+    if not expr:
+      expr = re.compile(pattern)
+      self._cache[pattern] = expr
+    return expr
+
+
+class FileProcessor(object):
+
+  def __init__(self, filename):
+    self.filename = filename
+
+  def LoadFileLines(self, desired_offset=None):
+    self.lines = []
+    self.line_offsets = []
+    offset = 0
+    with open(self.filename) as input:
+      for line in input:
+        self.lines.append(line.rstrip('\n'))
+        self.line_offsets.append(offset)
+        offset += len(line)
+        if (desired_offset is not None and
+            offset > desired_offset):
+          break
+
+  def OffsetToLineAndColum(self, offset):
+    line_index = bisect.bisect(self.line_offsets, offset) - 1
+    col_index = offset - self.line_offsets[line_index]
+    return line_index, col_index
+
+  def LoadFileData(self):
+    with open(self.filename) as input:
+      self.data = input.read()
+
+  def GetMatchContainingOffset(self, pattern, offset):
+    candidate = None
+    match_start = offset
+    while match_start >= 0:
+      m = re.match(pattern, self.data[match_start:])
+      if m:
+        candidate = m
+      elif match_start != offset:
+        break
+      match_start -= 1
+    return candidate and candidate.group()
+
+  def Insert(self, offset, text):
+    pass
+
+
+class JSProcessor(FileProcessor):
+
+  def GetDefaultImportSpec(self, offset):
+    self.LoadFileData()
+    return self.GetMatchContainingOffset(r'[a-zA-Z0-9_$.]+', offset)
+
+  def _FindImportStatements(self):
+    self.LoadFileData()
+    scanner = Scanner(self.data)
+    groups = []
+    while True:
+      scanner.SkipRE(r'\s+')
+      group = None
+      while scanner.SkipRE(
+          r"""\bgoog\.require\(['"]([^'"]+)['"]\); *(?://.*)?\n"""):
+        if group is None:
+          group = ImportGroup()
+        group.Append(
+            Import(scanner.match.group(1),
+                   scanner.match.start(),
+                   scanner.match.end()))
+      if group:
+        print group
+        groups.append(group)
+      elif scanner.SkipRE(r'\bgoog\.provide\([^)]+\);'):
+        pass
+      elif scanner.SkipLiteral('/*'):
+        scanner.FindAndSkipLiteral('*/')
+      elif scanner.SkipLiteral('//'):
+        scanner.FindAndSkipLiteral('\n')
+      else:
+        break
+
+  def MakeImport(self, spec):
+    return Import(spec, None, None)
+
+  def _SaveImport(self, start, end, spec):
+    print spec
+
+
+class App(object):
+
+  def __init__(self, args):
+    self.args = args
+    self.processor = JSProcessor(self.args.filename)
+
+  def Add(self):
+    self.processor.FindImportStatements()
+
+  def Default(self):
+    import_spec = self.processor.GetDefaultImportSpec(self.args.offset)
+    if import_spec:
+      print import_spec
+    else:
+      sys.exit(1)
+
+def main():
+  parser = argparse.ArgumentParser(description='')
+  parser.add_argument('--debug', action='store_true')
+
+  subparsers = parser.add_subparsers(dest='cmd')
+
+  parser_completions = subparsers.add_parser('default')
+  parser_completions.add_argument('filename')
+  parser_completions.add_argument('offset', type=int)
+
+  parser_completions = subparsers.add_parser('add')
+  parser_completions.add_argument('filename')
+  parser_completions.add_argument('import_spec')
+
+  args = parser.parse_args()
+  if args.debug:
+    logging.basicConfig(level=logging.DEBUG)
+  app = App(args)
+  if args.cmd == 'default':
+    app.Default()
+  if args.cmd == 'add':
+    app.Add()
+
+
+if __name__ == '__main__': main()

@@ -1,0 +1,5 @@
+#! /bin/bash
+
+while read -a msg; do
+  echo "${#msg[*]} words: ${msg[@]}" >&2
+done

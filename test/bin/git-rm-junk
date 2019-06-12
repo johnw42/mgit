@@ -1,0 +1,4 @@
+#! /bin/bash
+archive=$(make-dated-file-name gitignore- .tar)
+files=($(git clean -nd | sed 's/Would remove \(.*\)/\1/'))
+tar -cvf "$archive" "${files[@]}" && rm -rf "${files[@]}"

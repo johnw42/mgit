@@ -1,0 +1,51 @@
+#! /usr/bin/python
+
+import os
+import os.path
+import yaml
+
+apps_dir = os.path.expanduser("~/.local/share/applications")
+icons_dir = os.path.expanduser("~/.local/share/icons")
+config_file = os.path.expanduser("~/.local/jrw/apps.yaml")
+data = yaml.load(open(config_file))
+
+for app in data['apps']:
+  basename = app['filename']
+
+  # Copy the command into a standalone script.  This is how Docky recognizes
+  # that multiple instances of the same executable should have different icons.
+  script_filename = apps_dir + '/' + basename + '.sh'
+  with open(script_filename, 'w') as out:
+    out.write('#! /bin/bash -l\n')
+    out.write(app['exec'] + ' >/dev/null 2>&1\n')
+  os.chmod(script_filename, 0755)
+
+  desktop_filename = apps_dir + '/' + basename + '.desktop'
+  with open(desktop_filename, 'w') as out:
+    def prop(name):
+      value = app.get(name)
+      value = value and value.replace('$HOME', os.path.expanduser('~'))
+      return value
+    def bool_prop(name, default_value):
+      value = app.get(name, default_value)
+      return "true" if value else "false"
+    def writeln(key, value):
+      if value is not None:
+        out.write('%s=%s\n' % (key, value))
+    out.write('[Desktop Entry]\n')
+    out.write('Version=1.0\n')
+    out.write('Type=Application\n')
+    writeln('Name', prop('name'))
+    writeln('Exec', script_filename)
+    for ext in ['.png', '.svg']:
+      icon_path = icons_dir + '/' + basename + ext
+      if os.path.exists(icon_path):
+        writeln('Icon', icon_path)
+        break
+    else:
+      writeln('Icon', basename)
+    writeln('StartupNotify', bool_prop('startup_notify', True))
+    writeln('Terminal', bool_prop('terminal', False))
+    # This can be found using xprop
+    writeln('StartupWMClass', prop('startup_wm_class'))
+  os.chmod(desktop_filename, 0755)
