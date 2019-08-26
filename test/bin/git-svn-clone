@@ -1,0 +1,50 @@
+#! /bin/bash
+
+# Usage:
+#  git-svn-clone svn-url [dir-name]
+
+source utils.sh
+
+svn_url=$1
+auto_dir_name=${svn_url%/}
+auto_dir_name=${svn_url##*/}
+dir_name=${2-$auto_dir_name}
+
+IFS='
+'
+
+top_pwd=$PWD
+mkdir "$dir_name" || exit
+push_trap 'rm "$dir_name"' EXIT
+cd "$dir_name" || exit
+push_trap 'cd "$top_pwd"' EXIT
+git init || exit
+
+init_params=()
+found_trunk=false
+found_tags=false
+found_branches=false
+for line in $(svn ls $svn_url || exit); do
+  [[ $line = trunk/ ]] && found_trunk=true
+  [[ $line = tags/ ]] && found_tags=true
+  [[ $line = branches/ ]] && found_branches=true
+done
+if $found_trunk && $found_tags && $found_branches; then
+  echo "Found standard layout."
+  init_params+=(-s)
+fi
+
+fetch_params=()
+for line in $(svn info "$svn_url" || exit); do
+  if [[ $line = 'Revision: '* ]]; then
+    rev=${line#Revision: }
+    echo "Revision: $rev"
+    fetch_params+=("-r$rev")
+    break
+  fi
+done
+
+git svn init "${init_params[@]}" "$svn_url" || exit
+git svn fetch "${fetch_params[@]}" || exit
+pop_trap EXIT
+pop_trap EXIT

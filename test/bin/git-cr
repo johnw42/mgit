@@ -1,0 +1,19 @@
+#! /usr/bin/python
+# Examine the system clipboard for a branch name and attempt to check it out.
+
+import subprocess
+import sys
+
+from jrw import git
+
+
+def main():
+  url = subprocess.check_output(['xsel', '--clipboard'])
+  for ref in git.RecentBranches(True):
+    if ref.branch_name in url:
+      git.Checkout(ref)
+      return
+  sys.exit('No branch matching %r' % url)
+
+
+main()

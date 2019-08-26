@@ -1,0 +1,20 @@
+#! /bin/bash
+
+: ${1:?missing repo names}
+
+repo_hot_files() {
+  local repo path
+
+  for repo; do
+    if vcsh list | fgrep -qx $repo; then
+      vcsh "$repo" ls-files |
+      xargs -d'\n' stat --format "%y $repo %n" 2>/dev/null
+    fi
+  done
+}
+
+repo_hot_files "$@" | sort -n | cut -c1-19,36-
+
+# Local Variables:
+# sh-basic-offset: 2
+# End:

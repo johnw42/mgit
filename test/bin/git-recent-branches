@@ -1,0 +1,22 @@
+#! /usr/bin/python
+# Print a history of recently visited git branches.
+
+from jrw import git
+
+def main():
+  branches = git.RecentBranches(False)[:9]
+  refs_by_name = {ref.branch_name: ref for ref in branches}
+  for i, ref in enumerate(branches):
+    print '%s: %s' % (i+1, ref.branch_name)
+  try:
+    text = raw_input('Check out branch: ')
+    if text:
+      try:
+        branch = refs_by_name[text]
+      except KeyError:
+        branch = branches[int(text) - 1]
+      git.Checkout(branch)
+  except KeyboardInterrupt:
+    pass
+
+main()

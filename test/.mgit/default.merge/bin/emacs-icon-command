@@ -1,0 +1,6 @@
+#! /bin/bash
+
+cd ~/.emacs.d
+#emacsclient -s icon -e '(emacs-icon-command t)' -a false || emacs -f emacs-icon-command
+
+emacsclient -a '' -c -e nil

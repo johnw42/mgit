@@ -1,0 +1,13 @@
+#! /bin/bash
+
+# Run once per minute by cron.
+
+set -e
+
+main() {
+  if [[ $(seconds_since_last_prompt) -le 60 ]]; then
+    vcsh_background_commit
+  fi
+}
+
+main()

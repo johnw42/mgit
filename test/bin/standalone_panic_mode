@@ -1,0 +1,76 @@
+#! /bin/bash
+
+IFS=
+set -e
+
+if [[ $UID == 0 ]]; then
+    echo fail
+    date
+    sleep 10
+    exit 0
+fi
+
+# Figure out who we are.
+: ${SUDO_UID:=$UID}
+
+# Wait for an optional condition to become true.
+sleep_until "$@"
+
+# If this function takes longer than a second to finish, something is
+# very wrong.
+do_trivial_work() {
+  ps -f >/dev/null
+  ls -l ~ >/dev/null
+  xwininfo -root >/dev/null
+}
+
+# This is what happens when do_trivial_work takes too long to
+# complete.
+panic() {
+  pkill -u $SUDO_UID
+  sleep 2
+  pkill -9 -u $SUDO_UID
+  echo PANIC
+  exit
+}
+
+# Don't execute a writable copy of this file.
+if [[ -w $0 ]]; then
+  new_file=$(tempfile)
+  cp $0 $new_file
+  if [[ $UID == 0 ]]; then
+    chown $SUDO_UID $new_file
+  fi
+  chmod 500 $new_file
+  exec sudo $new_file
+fi
+
+exec 1>&2 2>/dev/null
+export panic_file=$(tempfile)
+export dont_panic_file=$(tempfile)
+
+
+# Don't panic as long as this loop is running smoothly.
+while true; do
+  (set +e; sleep 1 && do_trivial_work && touch $dont_panic_file)
+done &
+
+trap panic EXIT
+trap '' TERM INT QUIT HUP
+set +e
+
+# If the system is under load, wait until it's not.
+until [[ $panic_file -nt $dont_panic_file ]]; do
+  touch $panic_file
+  sleep 0.5
+done
+
+echo "Panic mode is active."
+
+until [[ $panic_file -nt $dont_panic_file ]]; do
+  touch $panic_file
+  sleep 3
+done
+
+trap '' EXIT
+panic

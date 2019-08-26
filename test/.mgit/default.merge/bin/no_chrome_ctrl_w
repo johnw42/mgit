@@ -1,0 +1,100 @@
+#! /bin/bash
+
+IFS='
+'
+
+if [[ $# == 0 ]]; then
+  active_wid=$(xdotool getactivewindow)
+  is_chrome=false
+  is_browser=false
+  for line in $(xprop -id $active_wid WM_CLASS WM_WINDOW_ROLE); do
+    case $line in
+      'WM_CLASS(STRING) = '*', "Google-chrome'*) is_chrome=true ;;
+      'WM_WINDOW_ROLE(STRING) = "browser"') is_browser=true ;;
+    esac
+  done
+
+  if $is_chrome && $is_browser; then
+    exit
+  fi
+
+  # Just send the 'w' key, assuming the Ctrl modifier is still active.
+  # Otherwise xdotool simulates relaseing the control key, which can
+  # cause problems when entering a sequence of keys with the control
+  # key held down.
+  exec xdotool getactivewindow key w
+  exit
+fi
+
+conf_dir=/org/gnome/settings-daemon/plugins/media-keys
+
+case $1 in
+  --install)
+    i=0
+
+    if dconf dump $conf_dir/ | fgrep -qw "binding='<Primary>w'"; then
+      echo "Already installed."
+      exit 1
+    else
+      while dconf list $conf_dir/custom-keybindings/ | grep -qw custom$i/; do
+        (( i++ ))
+      done
+      active_bindings=$(dconf read $conf_dir/custom-keybindings)
+      if [[ $active_bindings == '' ]]; then
+        active_bindings='['
+      else
+        active_bindings="${active_bindings%]},"
+      fi
+      active_bindings="$active_bindings'$conf_dir/custom-keybindings/custom$i/']"
+      dconf load $conf_dir/ <<EOF
+[/]
+custom-keybindings=$active_bindings
+
+[custom-keybindings/custom$i]
+binding='<Ctrl>w'
+command='$0'
+name='Disable Ctrl+W in Chrome'
+EOF
+      #dconf dump $conf_dir/
+    fi
+    ;;
+  --install2)
+    python - <<\EOF
+from gi.repository import Gio
+print Gio.g_settings_new()
+print 'hello, world'
+EOF
+#     i=0
+
+#     schema=org.gnome.settings-daemon.plugins.media-keys
+#     rschema=$schema.custom-keybinding
+#     rpath=/$(echo $schema | tr . /)/custom-keybindings
+
+#     paths=$(gsettings get $schema custom-keybindings)
+#     echo paths: $paths
+
+#     IFS=,
+#     paths=()
+#     for key in $(gsettings get $schema custom-keybindings | tr -d "[]'"); do
+#       paths+=($key)
+#     done
+#     IFS='
+# '
+#     for path in ${paths[@]}; do
+#       binding=$(gsettings get $rschema:$path key)
+#       for key in $(gsettings list-keys $rschema:$path); do
+#         echo key; gsettings get $rschema:$path $key
+#       done
+#     done
+
+        
+    #gsettings range $schema.custom-keybindings:
+    #/org/gnome/settings-daemon/plugins/media-keys/
+    ;;
+  --reset)
+    dconf reset $conf_dir/custom-keybindings
+    dconf reset -f $conf_dir/custom-keybindings/
+    #dconf reset -f $conf_dir/custom3/
+    #dconf dump /org/gnome/settings-daemon/plugins/media-keys/
+    ;;
+esac

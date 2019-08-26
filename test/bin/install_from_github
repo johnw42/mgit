@@ -1,0 +1,70 @@
+#! /usr/bin/python
+import argparse
+import logging
+import os
+import re
+import subprocess
+import sys
+
+
+DEFAULT_USER = 'johnw42'
+
+
+def main():
+  parser = argparse.ArgumentParser(description='Install a project hosted on github.')
+  parser.add_argument('url_or_project')
+  parser.add_argument('local_dir', nargs='?')
+  parser.add_argument(
+      '--user', default=DEFAULT_USER,
+      help='set the github user')
+  parser.add_argument(
+      '--prefix', default=os.path.expanduser('~/.local'),
+      help='set the install prefix')
+  parser.add_argument('--debug', action='store_true')
+  args = parser.parse_args()
+  if args.debug:
+    logging.basicConfig(level=logging.DEBUG)
+  App().Run(args)
+
+
+class App(object):
+
+  def Run(self, args):
+    os.environ.pop('GIT_DIR', None)
+
+    url = args.url_or_project
+    local_dir = args.local_dir
+    if re.match(r'\w+', url):
+      if not local_dir:
+        local_dir = url
+      url = 'git@github.com:%s/%s.git' % (args.user, url)
+    if not local_dir:
+      m = re.match('.*:.*/([^/.]+)\.git', args.url_or_project)
+      if not m:
+        sys.exit('can\'t guess local directory')
+      local_dir = m.group(1)
+
+    if os.path.isdir(os.path.join(local_dir, '.git')):
+      subprocess.check_call(['git', 'pull'], cwd=local_dir)
+    else:
+      subprocess.check_call(['git', 'clone', url, local_dir])
+      subprocess.check_call(['mr', 'register'], cwd=local_dir)
+
+    if os.path.isfile(os.path.join(local_dir, 'setup.py')):
+      logging.info('Installing with setup.py')
+      subprocess.check_call(
+          ['python', 'setup.py', 'install', '--prefix=' + args.prefix],
+          cwd=local_dir)
+    else:
+      # Install with configure and/or make
+      if os.path.isfile(os.path.join(local_dir, 'configure')):
+        subprocess.check_call(
+            ['./configure', '--prefix=' + args.prefix],
+            cwd=local_dir)
+      if os.path.isfile(os.path.join(local_dir, 'Makefile')):
+        subprocess.check_call(
+            ['make', 'install', 'PREFIX=' + args.prefix],
+            cwd=local_dir)
+
+
+if __name__ == '__main__': main()

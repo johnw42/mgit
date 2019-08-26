@@ -1,0 +1,280 @@
+#! /usr/bin/python
+
+# Run a program in the background.
+
+import argparse
+import re
+import shutil
+import subprocess
+import tempfile
+import time
+import sys
+import optparse
+import os
+import logging
+
+
+def ForkWithOutputFile(args):
+  null = open("/dev/null", "rb")
+
+  if args.logfile:
+    out_file_path = args.logfile
+    out_file = file(args.logfile, 'wt')
+  else:
+    out_file_path = None
+    out_file = tempfile.NamedTemporaryFile(delete=False)
+  
+  try:
+    proc = subprocess.Popen([args.cmd] + args.cmd_arg,
+                            stdin=null,
+                            stdout=out_file,
+                            stderr=subprocess.STDOUT)
+  except OSError, x:
+    sys.exit(str(x))
+  time.sleep(args.timeout)
+  if proc.poll() is not None:
+    out_file.close()
+    with open(out_file.name) as input:
+      sys.stderr.write(input.read())
+    os.remove(out_file.name)
+    sys.exit(proc.poll())
+  else:
+    if out_file_path is None:
+      temp_dir = os.path.dirname(out_file.name)
+      out_file_path = os.path.join(
+        temp_dir,
+        os.path.basename(args.cmd) + "." + str(proc.pid) + ".out")
+      os.rename(out_file.name, out_file_path)
+    sys.stderr.write("Writing output to " + out_file_path + "\n")
+
+
+def GetScreenSessions(session_name):
+  proc = subprocess.Popen(['screen', '-ls'],
+                          stdout=subprocess.PIPE)
+  suffix = ''
+  if session_name:
+    suffix = '.' + session_name
+  ids = set()
+  for line in proc.stdout:
+    m = re.match('^\t([^\t]+)\t', line)
+    if m:
+      session_id = m.group(1)
+      if session_id.endswith(suffix):
+        ids.add(session_id)
+  proc.wait()
+  return ids
+
+
+def GetScreenSession(session_name):
+  sessions = list(GetScreenSessions(session_name))
+  if len(sessions) == 1:
+    return sessions[0]
+  else:
+    return None
+
+
+def ForkWithScreen(args, prog_name):
+  """The normal entry point."""
+
+  if args.kill:
+    subprocess.check_call(['screen', '-r', args.kill, '-X', 'quit'])
+    sys.exit()
+  if args.attach:
+    subprocess.check_call(['screen', '-r', args.attach])
+    sys.exit()
+  if not args.cmd:
+    p.error('Not enough arguments.')
+
+  temp_dir = tempfile.mkdtemp(prefix='fork')
+  child_result = 0
+  try:
+    pipe = os.path.join(temp_dir, 'pipe')
+    os.mkfifo(pipe)
+    logfile = args.logfile or os.path.join(temp_dir, 'screenlog')
+    screenrc = os.path.join(temp_dir, 'screenrc')
+    session_name = 'fork-%s-%s' % (os.getpid(), os.path.basename(args.cmd))
+    with file(screenrc, 'wb') as out:
+      out.write('logfile \'%s\'\n' % logfile.replace("'", r"'\''"))
+      out.write('deflog on\n')
+      out.write('caption always "C-a C-d to detach"\n')
+    cmd = ['screen', '-S', session_name, '-c', screenrc, '-L']
+    if not args.fg:
+      cmd += ['-d', '-m']
+    cmd += ['--', sys.argv[0], '--helper']
+    if args.wait:
+      cmd += ['--wait']
+    if args.debug:
+      cmd += ['--debug']
+    cmd += ['--pipe=' + pipe,
+            '--timeout=' + str(args.timeout),
+            '--', args.cmd] + args.cmd_arg
+    logging.info('screen command: %r', cmd)
+    logging.info('screen command: %s', ' '.join(cmd))
+    helper_pid = None
+    child_pid = None
+    proc = subprocess.Popen(cmd)
+    logging.debug('helper pid: %r', proc.pid)
+    logging.debug('new session: %r', GetScreenSession(session_name))
+    with file(pipe, 'rb', 1) as pipe_in:
+      proc.wait()
+      logging.info('helper returned: %r', proc.returncode)
+      new_session = GetScreenSession(session_name)
+      while True:
+        line = pipe_in.readline()
+        logging.debug('line: %r', line)
+        if not line: break
+        if line.startswith('echo '):
+          sys.stdout.write(line[5:])
+          sys.stdout.flush()
+        elif line.startswith('helper_pid '):
+          helper_pid = int(line.split()[1])
+        elif line.startswith('running '):
+          child_pid = int(line.split()[1])
+          if new_session and new_session in GetScreenSessions(session_name):
+            print '%s has pid %s' % (args.cmd, child_pid)
+            # print 'to reattach:  screen -r %s' % new_session
+            # print 'to kill:      screen -r %s -X quit' % new_session
+            print 'to attach:  %s -a %s' % (prog_name, new_session)
+            print 'to kill:    %s -k %s' % (prog_name, new_session)
+        elif line.startswith('finished '):
+          child_result = int(line.split()[1])
+          if new_session:
+            subprocess.call(['screen', '-r', new_session, '-X', 'quit'])
+          with file(logfile, 'rb') as log_in:
+            sys.stdout.write(log_in.read().replace('\r\n', '\n'))
+          sys.stdout.flush()
+          print '%s returned %s' % (args.cmd, child_result)
+        elif line == 'break\n':
+          break
+  finally:
+    logging.debug('deleting temp dir')
+    shutil.rmtree(temp_dir)
+  sys.exit(child_result)
+
+
+def ForkHelper():
+  """This function is run from within screen."""
+
+  p = argparse.ArgumentParser()
+  p.add_argument(
+    '--helper', action='store_true', required=True)
+  p.add_argument(
+    '--wait', action='store_true',
+    help='Keep the screen session open after the child exits.')
+  p.add_argument(
+    '--timeout', type=float, default=1.0,
+    help='Wait TIMEOUT seconds before putting the child in the background.')
+  p.add_argument(
+    '--pipe',
+    help='Set up a pipe named PIPE to communicate with the child process.')
+  p.add_argument(
+    '--screen', action='store_true',
+    help='Run the child inside a screen(1) session.')
+  p.add_argument(
+    '--debug', action='store_true')
+  p.add_argument(
+    'cmd')
+  p.add_argument(
+    'cmd_arg', nargs=argparse.REMAINDER)
+  
+  args = p.parse_args()
+  assert args.helper
+
+  cmd = [args.cmd] + args.cmd_arg
+  proc = None
+  if args.pipe:
+    pipe_out = file(args.pipe, 'wb', 1)
+  else:
+    pipe_out = sys.stdout
+  try:
+    def ctrl(message):
+      """Sends a message back to the main process."""
+      pipe_out.write(message + '\n')
+
+    def echo(message):
+      """Writes a message to the main process's terminal."""
+      ctrl('echo ' + message)
+
+    ctrl('helper_pid %s' % os.getpid())
+
+    try:
+      try:
+        proc = subprocess.Popen(cmd)
+      except OSError as x:
+        echo('%s: %s' % (cmd[0], x))
+        return
+      for sleep_time in range(-4, 0):
+        result = proc.poll()
+        if result is not None:
+          break
+        time.sleep(args.timeout * 2.0 ** sleep_time)
+      if result is not None:
+        ctrl('finished %s' % result)
+      else:
+        ctrl('running %s' % proc.pid)
+      ctrl('break')
+    except:
+      echo('error in helper')
+  finally:
+    if args.pipe:
+      pipe_out.close()
+  proc.wait()
+  if args.wait:
+    print
+    while True:
+      try:
+        raw_input('[%s returned %s; ^C or ^D to close]' % (cmd[0], proc.returncode))
+      except KeyboardInterrupt:
+        break
+
+
+def main():
+  if sys.argv[1:2] == ['--helper']:
+    ForkHelper()
+    return
+
+  p = argparse.ArgumentParser()
+  p.add_argument(
+    '--screen', action='store_true',
+    help='run child process in screen')
+  p.add_argument(
+    '--fg', action='store_true',
+    help='run in foreground (implies --screen)')
+  p.add_argument(
+    '--wait', action='store_true',
+    help='leave screen session open after process exits (implies --screen)')
+  p.add_argument(
+    '--timeout', type=float, default=1,
+    help='set the number of seconds to wait before returning')
+  p.add_argument(
+    '-L', '--logfile',
+    help='set the name of the file to create')
+  p.add_argument(
+    '--debug', action='store_true',
+    help=argparse.SUPPRESS)
+  g = p.add_mutually_exclusive_group(required=True)
+  g.add_argument(
+    '-a', '--attach', metavar='SESSION',
+    help='attach to an existing session (implies --screen)')
+  g.add_argument(
+    '-k', '--kill', metavar='SESSION',
+    help='kill an existing session (implies --screen)')
+  g.add_argument(
+    'cmd', nargs='?', metavar='command',
+    help='command to run')
+  p.add_argument(
+    'cmd_arg', metavar='...', nargs=argparse.REMAINDER,
+    help='arguments to command')
+  args = p.parse_args()
+
+  if args.attach or args.kill or args.wait or args.fg:
+    args.screen = True
+
+  logging.basicConfig(level=logging.DEBUG if args.debug else logging.WARN)
+
+  if args.screen:
+    ForkWithScreen(args, p.prog)
+  else:
+    ForkWithOutputFile(args)
+
+main()

@@ -1,0 +1,61 @@
+;; -*- mode: elide; lexical-binding: t -*-
+(require 'elide)
+(elide-namespace example)
+(elide-import (example2 example2-function))
+
+
+foo
+(defvar x)
+
+(defvar example-x)
+
+
+(defalias 'example-my-car 'car)
+
+(defalias 'example-my-other-car 'example-my-car)
+
+
+(defsubst example-my-subst ())
+
+default-directory
+
+(elide-expand
+ (elide-mapform [1 example-a ([2 example-b]) 3 example-c]
+                :post-func
+                (lambda (example-x)
+                  (cond
+                   ((integerp example-x) (1+ example-x))
+                   ((listp example-x) (apply 'vector example-x))
+                   ((vectorp example-x) (append example-x nil))
+                   (t example-x)))))
+
+(lambda (example-x)
+  example-x ;; TODO(jrw): don't rename?
+  (progn
+    (defmacro example-local-defun (&rest example-args)
+      `(defun ,@example-args))
+    
+    (defvar example-my-var)
+
+    (example-local-defun example-function1 (&key example-foo)
+                 'example-foo 
+                 #'example-foo  
+                 `(example-bar ,example-baz ,@example-quux)
+                 (example2-example2))
+    
+    (case example-x 
+      ((example-bar example-baz) nil))))
+
+[example-foo example-x 1 2 3]
+
+(example2-function)
+
+
+
+
+
+
+(defstruct example-foo bar baz)
+ 
+
+(defun* example-d* (&key example-a example-b))

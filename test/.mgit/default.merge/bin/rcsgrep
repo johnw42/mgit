@@ -1,0 +1,7 @@
+#! /bin/bash
+
+for dir in /main/git/*.git /main/swingly/git/*.git; do
+  cd "$dir"
+  pwd >&2
+  git grep "$@"
+done

@@ -1,0 +1,65 @@
+#! /usr/bin/python
+import argparse
+import sys
+import re
+
+
+def Quote_sh(text):
+  if re.match(r'^[-_.:/a-zA-Z0-9]+$', text):
+    return text
+  return "'" + text.replace("'", r"'\''") + "'"
+
+
+def main():
+  # Look for a -- in the input and handle it specially because
+  # argparse can't report whether the input contains a -- argument.
+  after_dashdash = None
+  try: dashdash_index = sys.argv.index('--', 1)
+  except ValueError: pass
+  else:
+    after_dashdash = sys.argv[dashdash_index+1:]
+    del sys.argv[dashdash_index:]
+
+  # Build a list of the available quoting functions.
+  quote_funcs = {}
+  for key, value in globals().items():
+    quote_style = key.partition('Quote_')[2]
+    if quote_style:
+      quote_funcs[quote_style] = value
+  quote_styles = sorted(quote_funcs)
+
+  # Parse the arguments.
+  p = argparse.ArgumentParser(
+    usage="""
+  %(prog)s [options] -- [arg [arg ...]]
+  %(prog)s [options] -""",
+    description='Escape and print each argument.')
+  p.add_argument('-s', '--style',
+                 choices=quote_styles,
+                 default='sh',
+                 help='set quoting style; possible values: ' + ', '.join(quote_styles))
+  p.add_argument('-', dest='dash', action='store_true',
+                 help='read text to escape from stdin')
+  p.add_argument('-l', '--linewise', action='store_true',
+                 help='escape each input line separately')
+  p.add_argument('--test', action='store_true')
+  args = p.parse_args()
+
+  if args.test:
+    sys.exit(RunTests())
+
+  quote_func = quote_funcs[args.style]
+  if after_dashdash is not None:
+    for arg in after_dashdash:
+      print quote_func(arg),
+    print
+  elif args.dash:
+    if args.linewise:
+      for line in sys.stdin:
+        print quote_func(line.rstrip('\n'))
+    else:
+      print quote_func(sys.stdin.read())
+  else:
+    print p.error('Arguments must contain either - or -- but not both.')
+
+if __name__ == '__main__': main()

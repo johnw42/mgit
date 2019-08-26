@@ -1,0 +1,169 @@
+#! /usr/bin/env python3
+
+"""A script to find or open an emacs window tied to a desktop file in
+the current directory or a parent of the current directory.
+
+Outline:
+- Search up the directory hierachy until a .emacs.desktop file is found.
+- If there is no emacs daemon using the desktop file, start one.
+- If there is no GUI frame for the emacs instance, open one.
+- If the frame doesn't have input focus, focus it.
+- If there are files specified on the command line, visit them.
+
+This script is not appropriate as the value of VISUAL or EDITOR.
+Consider simply using 'emacs' instead.
+
+TODO(jrw): Handle non-GUI situations.
+"""
+
+import os
+import re
+import shlex
+import subprocess
+import sys
+import logging
+
+EMACS = 'emacs'
+EMACS_CLIENT = 'emacsclient'
+USE_GDB = False
+# if type -p cgdb >/dev/null; then
+#   USE_GDB=true
+# fi
+
+class App:
+
+  def __init__(self):
+    """Initialization of instance variables."""
+
+    self.files = sys.argv[1:]
+    self.env = dict(os.environ)
+    self.desktop_dir = None
+    self.socket_name = None
+
+  def Run(self):
+    """Main entry point."""
+
+    try:
+      # Prevent emacsclient from automatically starting a daemon.
+      del self.env['ALTERNATE_EDITOR']
+    except KeyError:
+      pass
+
+    self.FindDesktopDir()
+    if self.desktop_dir is None:
+      logging.info('no desktop file')
+      cmd = [EMACS] + self.files
+      self.LogCmd('emacs commad line', cmd)
+      subprocess.Popen(cmd, env=self.env)
+    else:
+      logging.info('desktop file: %s', self.desktop_dir)
+      self.socket_name = self.desktop_dir.replace('/', '!')
+      if self.IsDaemonRunning():
+        self.StartClient()
+      else:
+        self.StartDaemon()
+    pass
+
+  def FindDesktopDir(self):
+    """Finds the desktop directory.
+
+    Return:
+      (str or None) The directory that contains the desktop file to use.
+    """
+
+    here = os.getcwd()
+    there = None
+    while not os.path.exists(os.path.join(here, '.emacs.desktop')):
+      if there is None and os.path.isdir(os.path.join(here, '.git')):
+        there = here
+      here = os.path.dirname(here)
+      if here == '/':
+        self.desktop_dir = there
+        return
+    self.desktop_dir = here
+
+  def StartDaemon(self):
+    """Starts the emacs daemon."""
+
+    logging.info('starting daemon')
+    lock_file = os.path.join(self.desktop_dir, '.emacs.desktop.lock')
+    try:
+      os.remove(lock_file)
+    except OSError:
+      pass
+    cmd = (
+        [EMACS,
+         '--chdir=' + self.desktop_dir,
+         '--eval=(setq server-name (pop command-line-args-left))',
+         self.socket_name,
+         '--eval=(server-mode)',
+         '--eval=(desktop-read)',
+         '--eval=(desktop-save-mode)'] +
+        self.files)
+    self.LogCmd('daemon command line', cmd)
+    subprocess.Popen(cmd, env=self.env)
+
+  def StartClient(self):
+    """Calls the emacs client."""
+
+    logging.info('starting client')
+    frame_type = self.ClientOutput('-e', '(framep (selected-frame))')
+    if frame_type in ['t', 'nil']:
+      # Create a new GUI frame.  Note: "t" here means tty, not true.
+      self.CallClient('-n', '-c')
+    else:
+      # Found a frame.  Direct the input focus there.  The call to
+      # raise-frame is necessary, at least in KDE.
+      self.CallClient(
+          '-e',
+          '(progn'
+          ' (raise-frame)'
+          ' (select-frame-set-input-focus (selected-frame)))')
+    if self.files:
+      self.CallClient('-n', *self.files)
+
+  def IsDaemonRunning(self):
+    """Finds out if the emacs daemon is running.
+
+    Returns:
+      (bool) True if the daemon is running.
+    """
+    uid = os.getuid()
+    if os.path.exists('/tmp/emacs' + str(uid) + '/' + self.socket_name):
+      client_out = self.ClientOutput('-e', 't')
+      return client_out == b't\n'
+    return False
+
+  def CallClient(self, *client_args):
+    """Calls emacsclient and sends output to the terminal."""
+
+    cmd = self.ClientCmd(*client_args)
+    self.LogCmd('calling emacsclient', cmd)
+    subprocess.check_call(cmd, env=self.env)
+
+  def ClientOutput(self, *client_args):
+    """Calls emacsclient and returns its output."""
+
+    try:
+      cmd = self.ClientCmd(*client_args)
+      self.LogCmd('client command for output', cmd)
+      return subprocess.check_output(cmd, env=self.env)
+    except subprocess.CalledProcessError:
+      return None
+
+  def ClientCmd(self, *args):
+    """Constructs a command for running emacsclient.
+
+    Returns:
+      A list of strings.
+    """
+
+    return [EMACS_CLIENT, '-s', self.socket_name] + list(args)
+
+  def LogCmd(self, label, cmd):
+    """Logs a command."""
+
+    logging.info('%s: %s', label, ' '.join(map(shlex.quote, cmd)))
+
+#logging.basicConfig(level=logging.INFO)
+App().Run()

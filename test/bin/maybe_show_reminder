@@ -1,0 +1,14 @@
+#! /bin/bash
+
+main() {
+  local IFS=
+  local reminder_file=~/.reminder
+  local interval=300
+  local now=$(date +%s)
+  local file_date=$(date +%s -r $reminder_file)
+  if (( file_date + interval < now )); then
+    reminder
+  fi
+}
+
+main "$@"

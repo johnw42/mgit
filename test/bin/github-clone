@@ -1,0 +1,6 @@
+#! /bin/bash
+
+while [[ $1 == -* ]]; do
+  shift
+done
+exec git clone git@github.com:johnw42/$1.git $2

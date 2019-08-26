@@ -1,0 +1,243 @@
+#! /usr/bin/python
+
+# Update the current user's incrontab based on a yaml file.
+
+import argparse
+import sys
+import yaml
+import os.path
+import subprocess
+import re
+import time
+import logging
+import logging.handlers
+import shlex
+import itertools
+
+#SEPARATOR = u'\ufeff '.encode('utf-8')
+SEPARATOR = ' '
+
+def main():
+  parser = argparse.ArgumentParser()
+  subparsers = parser.add_subparsers()
+
+  parser_run = subparsers.add_parser('_exec', help=argparse.SUPPRESS)
+  parser_run.add_argument('path')
+  parser_run.add_argument('filename')
+  parser_run.add_argument('flags')
+  parser_run.add_argument('command', nargs=argparse.REMAINDER)
+  parser_run.set_defaults(func=DoRun)
+
+  parser_update = subparsers.add_parser('update')
+  parser_update.set_defaults(func=DoUpdate)
+
+  parser_watch = subparsers.add_parser('watch')
+  parser_watch.add_argument('file')
+  parser_watch.set_defaults(func=DoWatch)
+
+  logging.basicConfig(level=logging.INFO)
+
+  try:
+    args = parser.parse_args()
+    args.func(args)
+  except:
+    logging.critical('Unhandled exception', exc_info=True)
+    sys.exit(1)
+
+def ShQuote(s):
+  return re.sub(r'([^-a-zA-Z0-9/_.])', r'\\\1', s)
+
+def JoinCommands(commands):
+  #return ShQuote(yaml.dump(commands, default_flow_style=True)).replace('$', '$$')
+  return ' '.join(map(ShQuote, commands)).replace('$', '$$')
+
+def SplitCommands(command_string):
+  return shlex(command_string)
+
+def DoRun(args):
+  logger = logging.getLogger()
+  handler = logging.handlers.SysLogHandler('/dev/log')
+  user = os.getenv('USER')
+  formatter = logging.Formatter(
+      'incrond/' + user + ': %(levelname)s: %(message)s')
+  handler.setFormatter(formatter)
+  logger.addHandler(handler)
+  logger.setLevel(logging.INFO)
+  logger.setLevel(logging.DEBUG)
+
+  logger.debug('raw args: %r', args)
+  commands = args.command
+
+  procs = []
+  for command in commands:
+    logger.debug('command: %s', command)
+    proc = subprocess.Popen(['bash', '-l', '-c', command])
+    procs.append((command, proc))
+  sleep_count = 0
+  while True:
+    new_procs = []
+    for command, proc in procs:
+      result = proc.poll()
+      if result is None:
+        new_procs.append((command, proc))
+      elif result == 0:
+        logging.info('command finished: %s', command)
+      else:
+        logging.warning('command returned %r: %s', result, command)
+    sleep_interval = 2 ** (-2 + sleep_count / 2.0)
+    time.sleep(sleep_interval)
+    sleep_count += 1
+    procs = new_procs
+    if procs:
+      if sleep_interval >= 2:
+        for command, proc in procs:
+          logging.info('waiting for command[%r]: %s' % (proc.pid, command))
+    else:
+      break
+
+def DoUpdate(args):
+  config_file = os.path.expanduser("~/.local/jrw/incron.yaml")
+  with open(config_file) as stream:
+    config = yaml.load(stream)
+
+  # config['watches'] += [{
+  #     'paths': [config_file],
+  #     #'mask': 'IN_CLOSE_WRITE',
+  #     #'command': 'logger incron test: $% $@',
+  #     'mask': 'IN_OPEN,IN_CLOSE_WRITE',
+  #     'command': 'logger %r' % sys.argv[0],
+  # }]
+
+  lines = []
+  if config and config['watches']:
+    for watch in config['watches']:
+      paths = watch.get('paths', [])
+      if 'path' in watch:
+        paths += [watch['path']]
+      mask = watch['mask']
+      if 'raw_command' in watch:
+        raw_command = watch['raw_command']
+      else:
+        commands = watch.get('commands', [])
+        if 'command' in watch:
+          commands.append(watch['command'])
+        logging.info('commands: %r', commands)
+        raw_command = (os.path.abspath(sys.argv[0]) +
+                       ' _exec $@ $# $% ' +
+                       JoinCommands(commands))
+      for path in paths:
+        path = os.path.expanduser(path)
+        lines += ['%s %s %s' % (ShQuote(path), mask, raw_command)]
+
+  lines += ['']
+
+  out = '\n'.join(lines)
+
+  subprocess.Popen(['incrontab', '-'], stdin=subprocess.PIPE).communicate(out)
+  subprocess.check_call(['incrontab', '-l'])
+
+def DoWatch(args):
+  config_file = os.path.expanduser("~/.local/jrw/incron.yaml")
+  with open(config_file) as stream:
+    data = stream.read()
+
+  #print yaml.emit(yaml.parse(data))
+  #print yaml.serialize(yaml.compose(data))
+
+  tree = yaml.compose(data)
+  events = yaml.parse(data)
+  data1 = yaml.emit(events)
+  events1 = yaml.parse(data1)
+
+  watches = TreeWrapper(tree, data)['watches']
+  del watches.value[1]
+
+  data2 = yaml.serialize(tree)
+  events2 = yaml.parse(data2)
+  tree2 = yaml.compose(data2)
+
+  def EventSignature(e):
+    return type(e), getattr(e, 'tag', None), getattr(e, 'value', None)
+
+  for e1, e2 in zip(events1, events2):
+    print e1
+    print e2
+    print EventSignature(e1) == EventSignature(e2)
+    print
+
+  # tree = yaml.compose(data)
+  # print [n.start_mark.pointer for n in tree.value[0][1].value]
+  # print [n.start_mark.buffer[n.start_mark.pointer:n.end_mark.pointer] for n in tree.value[0][1].value]
+  # print [n.style for n in tree.value[0][1].value]
+
+  # tree.value.append(
+  #     (yaml.ScalarNode('tag:yaml.org,2002:str', 'new_key'),
+  #      yaml.ScalarNode('tag:yaml.org,2002:str', 'new_value')))
+  # print yaml.serialize(tree)
+
+class TreeWrapper(object):
+
+  def __init__(self, tree, buffer):
+    self.tree = tree
+    self.buffer = buffer
+
+  def __getattr__(self, attr):
+    return getattr(self.tree, attr)
+
+  def __getitem__(self, key):
+    if isinstance(self.tree, yaml.MappingNode):
+      for key_node, value_node in self.tree.value:
+        if key_node.value == key:
+          return self._Wrap(value_node)
+      raise KeyError('No such key: %r' % key)
+    elif isinstance(self.tree, yaml.SequenceNode):
+      return self._Wrap(self.tree.value[key])
+    else:
+      raise ValueError('Wrong node type.')
+
+  def _Wrap(self, subtree):
+    return TreeWrapper(subtree, self.buffer)
+
+  @property
+  def text(self):
+    text = self.buffer[self.start:self.end]
+    self.__dict__['text'] = text
+    return text
+
+  @property
+  def start(self):
+    return self.tree.start_mark.index
+
+  @property
+  def end(self):
+    return self.tree.end_mark.index
+
+  def __repr__(self):
+    return repr(self.tree)
+
+  __str__ = __repr__
+
+# def SelectNodes(tree,
+#                 sequence_pred=None,
+#                 mapping_pred=None,
+#                 scalar_pred=None):
+#   if isinstance(tree, yaml.SequenceNode):
+#     if sequence_pred is not None and sequence_pred(tree):
+#       yield tree
+#     for child in tree.value:
+#       for result in SelectNodes(child, pred):
+#         yield result
+#   elif isinstance(tree, yaml.MappingNode):
+#     if mapping_pred is not None and mapping_pred(tree):
+#       yield tree
+#     for key, value in tree.value:
+#       for result in SelectNodes(key, pred):
+#         yield result
+#       for result in SelectNodes(value, pred):
+#         yield result
+#   elif scalar_pred not not None and scalar_pred(tree):
+#     yield tree
+
+main()
+
+#print JoinCommands(['foo bar', 'baz'])

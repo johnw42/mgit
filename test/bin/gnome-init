@@ -1,0 +1,11 @@
+#! /bin/bash
+
+if [[ $DISPLAY == :0 ]]; then
+  echo "$DBUS_SESSION_BUS_ADDRESS" > /tmp/local-dbus-session
+fi
+
+for proc in $(pgrep -f /usr/bin/gnome-screensaver); do
+  if grep -q CHROME_REMOTE_DESKTOP_SESSION=1 /proc/$proc/environ; then
+    kill -9 $proc
+  fi
+done

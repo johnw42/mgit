@@ -1,0 +1,18 @@
+#! /bin/bash
+
+# usage:
+#  abspath [<base_dir>...] <path>
+
+source bash_utils.sh
+init_bash_utils 1..2
+
+IFS=
+path=$PWD
+for arg; do
+  if [[ $arg = /* ]]; then
+    path=$arg
+  else
+    path=$path/$arg
+  fi
+done
+echo $path

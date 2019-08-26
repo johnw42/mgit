@@ -1,0 +1,13 @@
+#! /bin/sh
+
+# See comments in diffmap.awk
+
+if [[ $# = 2 ]]
+then
+  diff "$1" "$2" | diffmap.awk
+else
+  echo "usage: $(basename "$0") file1 file2 >mapfile" 1>&2
+  exit 1
+fi
+
+# Options for vi: ts=2 sw=2 sts=4 nowrap expandtab ft=sh

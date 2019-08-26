@@ -1,0 +1,68 @@
+#! /bin/bash
+
+main() {
+  exec 2>&1
+  IFS=
+
+  if [[ $SUDO_USER ]]; then
+    echo "Installing..."
+    initctl stop ${SUDO_USER}_panic_mode
+    (cat >/etc/init/${SUDO_USER}_panic_mode.conf <<EOF
+description "Kill a frozen session for $SUDO_USER."
+start on startup
+exec $1/bin/panic_mode $SUDO_USER $1/bin/panic
+respawn
+respawn limit 10 5
+EOF
+    )
+    exec initctl start ${SUDO_USER}_panic_mode
+  fi
+
+  if [[ $UID != 0 ]]; then
+    initctl restart dont_panic_mode &&
+    exec sudo $0 $HOME
+  fi
+
+  owner=${1:?}
+  panic_script=${2:?}
+
+  install -d -m 755 /var/run/panic_mode
+  install -d -o $owner -m 700 /var/run/panic_mode/$owner
+  cd /var/run/panic_mode/$owner
+
+  if [[ -f panic ]]; then
+    rm panic
+    exit 1  # Will be re-started by init.
+  fi
+
+  while true; do
+    date
+    echo "Monitoring is active."
+    until [[ -f panic ]]; do
+      touch panic
+      sleep 3
+    done
+    date
+    echo PANIC $owner $panic_script
+    sleep 2
+    if sudo -u $owner $panic_script; then
+      pkill -u $owner
+      sleep 2
+      pkill -9 -u $owner
+      exit 1  # Will be re-started by init.
+    else
+      date
+      echo "Monitoring is inactive."
+      while [[ -f panic ]]; do
+        sleep 10
+      done
+    fi
+  done
+}
+
+main "$@"; exit
+
+
+# Local Variables:
+# sh-basic-offset: 2
+# End:

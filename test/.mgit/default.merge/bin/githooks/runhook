@@ -1,0 +1,27 @@
+#! /usr/bin/python
+
+import sys
+import os
+import subprocess
+
+script_name = sys.argv[1]
+script_args = sys.argv[2:]
+
+#print 'runhooks', script_name
+git_dir = os.getenv('GIT_DIR')
+if git_dir:
+  hooks_dir = os.path.join(git_dir, 'hooks')
+  error = 0
+  for name in sorted(os.listdir(hooks_dir)):
+    if name.startswith(script_name + '.'):
+      script_path = os.path.join(hooks_dir, name)
+      if os.access(script_path, os.X_OK):
+        print name + '...'
+        error = subprocess.call([script_path] + script_args) or error
+  print script_name + '...'
+  default_script = sys.path[0] + '/' + script_name
+  if os.access(default_script, os.X_OK):
+    error = subprocess.call([default_script] + script_args) or error
+  sys.exit(error)
+else:
+  sys.exit('Can\'t run hook %s because GIT_DIR is undefined.' % script_name)

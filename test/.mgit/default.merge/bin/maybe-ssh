@@ -1,0 +1,10 @@
+#! /bin/bash
+
+dest=$1
+shift
+
+if [[ dest = $(hostname -s) || dest = $(hostname -f) ]]; then
+  exec "$@"
+else
+  exec ssh -X "$dest" "$@"
+fi

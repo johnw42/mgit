@@ -1,0 +1,5 @@
+#! /bin/bash
+set +x
+unset ALTERNATE_EDITOR
+emacsclient -s $1 -e '"Already running."' >& /dev/null || emacs -instance $1 &
+disown

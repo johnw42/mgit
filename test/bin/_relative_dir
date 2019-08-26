@@ -1,0 +1,33 @@
+#! /bin/bash
+
+# Find the path of $1 relative to $PWD or $2.
+
+source bash_utils.sh
+DEFINE_bool dot true
+init_utils
+
+check_arg_count 1 2
+
+subdir=$1
+parent_dir=${2-$PWD}
+
+[[ $subdir = /* ]] || user_error "not an absolute path: $subdir"
+[[ $parent_dir = /* ]] || user_error "not an absolute path: $parent_dir"
+
+subdir=${subdir%/}
+parent_dir=${parent_dir%/}
+
+if [[ $subdir == $parent_dir ]]; then
+  [[ $FLAG_dot = true ]] && echo .
+elif [[ $subdir = $parent_dir/* ]]; then
+  echo "${subdir#$parent_dir/}"
+elif [[ $parent_dir = $subdir/* ]]; then
+  dots=
+  while [[ $parent_dir != $subdir ]]; do
+    parent_dir=${parent_dir%/*}
+    dots=$dots/..
+  done
+  echo "${dots#/}"
+else
+  echo "$subdir"
+fi

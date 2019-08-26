@@ -1,0 +1,19 @@
+#! /usr/bin/python
+# -*- python-indent-offset: 4; -*-
+
+import subprocess
+import re
+
+LINE_PATTERN = (
+    r'^ *(?P<branch>\S+) : '
+    r'https://codereview.\chromium\.org/'
+    r'(?P<num>\d+)')
+
+def main():
+    for line in subprocess.check_output('git cl status'.split()).split('\n'):
+        m = re.match(LINE_PATTERN, line)
+        if not m: continue
+        branch = m.group('branch')
+        num = m.group('num')
+
+main()

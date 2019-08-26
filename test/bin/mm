@@ -1,0 +1,49 @@
+#! /bin/bash
+# -*- sh-basic-offset: 2; -*-
+# Run either make or ant, as appropriate.
+
+############################################
+###                                      ###
+### Personal version, not LCC version!!! ###
+###                                      ###
+############################################
+
+# Run LCC version if available.
+if next -q "$0"; then
+  exec next "$0" "$@"
+fi
+
+run() {
+  if [[ $1 == -r ]]; then
+    local SCRIPT=$2
+    shift 2
+    cd "$STARTPWD"
+    echo "% $*"
+    "$@" | ruby -pe "$SCRIPT"
+  else
+    cd "$STARTPWD"
+    echo "% $*"
+    "$@"
+  fi
+  exit $?
+}
+
+STARTPWD=$PWD
+LASTPWD=
+while [[ "$LASTPWD" != "$PWD" ]]; do
+  LASTPWD=$PWD
+  if [[ -f pom.xml ]]; then
+    run -r 'sub /^([^:]+):\[(\d+),(\d+)\] /, "\\1:\\2:\\3: "' mvn -B -f "$PWD/pom.xml" "$@"
+  elif [[ -f build.xml ]]; then
+    # Run ant in "emacs" mode, which make the output parseable by
+    # Emacs (and Vim!)
+    run ant -emacs -f "$LASTPWD/build.xml" "$@"
+  elif [[ -f "GNUmakefile" || -f "makefile" || -f "Makefile" ]]; then
+    run make -C $LASTPWD "$@"
+  fi
+  cd ..
+done
+
+NAME=$(basename "$0")
+echo "$NAME: could not find build file"
+exit 1

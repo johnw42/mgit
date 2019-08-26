@@ -1,0 +1,15 @@
+#! /bin/bash
+
+main() {
+  local reminder_file=~/.reminder
+  if [[ -f $reminder_file ]]; then
+    echo ""
+    echo "Reminder:"
+    cat $reminder_file
+    touch $reminder_file
+  else
+    echo "No reminder file."
+  fi
+}
+
+main "$@"

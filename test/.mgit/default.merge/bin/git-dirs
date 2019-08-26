@@ -1,0 +1,9 @@
+#! /usr/bin/python
+
+from jrw import git
+
+def main():
+  for git_dir in git.LsDirs(prune=True):
+    print git_dir
+
+main()

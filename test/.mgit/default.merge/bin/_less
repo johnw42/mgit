@@ -1,0 +1,7 @@
+#! /bin/bash
+
+if [[ -d $1 ]]; then
+  ls -l "$@" | exec less
+else
+  exec less "$@"
+fi

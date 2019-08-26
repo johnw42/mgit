@@ -1,0 +1,4 @@
+git commit -m '.logout'
+git commit -am '.logout -a'
+git add .
+git commit -m '.logout; add .'

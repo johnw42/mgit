@@ -1,0 +1,31 @@
+#! /usr/bin/env bash
+
+# Script to process the output of diffmap.
+
+if [[ $# != 1 ]]
+then
+  echo "usage: $(basename "$0") input <mapfile >output" 1>&2
+  exit 1
+fi
+
+read MULTIPLICITY
+
+MAPPED=()
+SCRIPT1=
+SCRIPT2=
+SEP=
+while read OLD NEW
+do
+    if [[ ${MAPPED[OLD]} = "" ]]
+    then
+      NEWTEXT=$(echo $NEW | tr "[0-9]" "[A-J]")
+      SCRIPT1="$SCRIPT1${SEP}s/$OLD/xy${NEWTEXT}zzy/g"
+      SCRIPT2="$SCRIPT2${SEP}s/xy${NEWTEXT}zzy/$NEW/g"
+      SEP=";"
+      MAPPED[OLD]=true
+    fi
+done
+
+sed -e "$SCRIPT1" "$1" | sed -e "$SCRIPT2"
+
+# Options for vi: ts=2 sw=2 sts=4 nowrap expandtab ft=sh

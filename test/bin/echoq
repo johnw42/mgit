@@ -1,0 +1,23 @@
+#! /bin/bash
+
+# Echo each argument with shell quoting.  Mainly designed to be a
+# debugging aid.
+
+new_args=()
+
+for arg in "$@"; do
+  # if [[ -z $arg ]]; then
+  #   new_arg="''"
+  # # elif [[ $arg =~ ^[-a-zA-Z0-9_./:]+$ ]]; then
+  # #   new_arg=$arg
+  # elif [[ $arg != *\'* ]]; then
+  #   new_arg=\'$arg\'
+  # else
+  #   new_arg=${arg/\\/\\\\}
+  #   new_arg=${new_arg/\"/\\\"}
+  #   new_arg=\"${new_arg/\$/\\\$}\"
+  # fi
+  new_arg=\'${arg//\'/\'\\\'\'}\'
+  new_args+=("$new_arg")
+done
+echo "${new_args[@]}"

@@ -1,0 +1,15 @@
+#! /bin/bash
+
+if prodcertstatus; then
+  cd
+  mkdir disabled
+  mv .bashrc disabled
+  mv .bash_profile disabled
+  exit 0
+else
+  exit 1
+fi
+
+# Local Variables:
+# sh-basic-offset: 2
+# End:

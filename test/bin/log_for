@@ -1,0 +1,15 @@
+#! /bin/bash
+
+main() {
+  local script=${1##*/}
+  shift
+  if [[ $# == 0 ]]; then
+    while read; do
+      printf '%s: %s\n' "$script" "$REPLY"
+    done
+  else
+    printf '%s: %s\n' "$script" "$@"
+  fi
+}
+
+main "$@"

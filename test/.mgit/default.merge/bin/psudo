@@ -1,0 +1,159 @@
+#! /bin/bash
+
+# Process-based sudo.  This script allows a process to request root
+# access on behalf of its child processes.  The user is asked to enter
+# a password at most once.  Any child process may request root access
+# without a password prompt by using the parent process's process ID
+# as a sort of authorization token.
+#
+# Usage:
+#   psudo <pid> <command>...
+#
+# The value of <pid> may be the PID of the current process, or the PID
+# of an ancestor the current process that has previously run psudo.
+#
+# See unit_test below for example usage.
+#
+# Total development time: 4-5 hours.
+
+function main() {
+  maybe_unit_test "$@" || exit
+  log "args: $@"
+  check_running_as_root "$@"
+  log "switching on args: $*"
+  while true; do
+    case "$1" in
+      --update-sudoers=*) shift ;;
+      '') die "not enough arguments" ;;
+      -*) die "unknown flag: $1" ;;
+      *) exec_command "$@"
+    esac
+  done
+}
+
+function format_date() {
+  date -Ins "$@"
+}
+
+function validate_ppid() {
+  local ppid=$1 line
+  if [[ $ppid == $$ ]]; then
+    return 0
+  fi
+  for pid in $(ps -o pid= --ppid $ppid); do
+    validate_ppid $pid && return 0
+  done
+  return 1
+}
+
+function check_running_as_root() {
+  local PATH=/bin:/usr/bin:$PATH
+  if [[ $# == 2 && $1 == --update-sudoers=[^/]* && -f $2 ]]; then
+    if [[ $2 == /etc/sudoers.tmp ]]; then
+      log "applying updates to $2"
+      local flag_arg=${1#*=}
+      local cmd=${flag_arg#*/}
+      local user=${flag_arg%%/*}
+      local add_line="$user ALL = SETENV: NOPASSWD: ${cmd//[,:]/?} *"
+      log "adding line: $add_line"
+      echo "$add_line" >> $2
+    else
+      log "skipping updates to $2"
+    fi
+    exit 0
+  fi
+
+  local whoami=$(whoami)
+  if [[ $whoami == root ]]; then
+    if [[ $1 == --update-sudoers=/* ]]; then
+      log "calling visudo"
+      local flag_arg=${1#*/}
+      VISUAL="$0 --update-sudoers=$flag_arg" exec visudo >/dev/null </dev/null
+    fi
+  else
+    log "re-starting as root"
+    local ppid=$1
+    if ! validate_ppid $ppid; then
+      die "process $ppid is not an ancestor of the current process"
+    fi
+    local ppid_date=$(format_date -r /proc/$ppid)
+    local helper=$XDG_RUNTIME_DIR/psudo_helper.$ppid.$ppid_date
+    if [[ -f $helper ]]; then
+      log "invoking helper script"
+      export PSUDO_LOG_SCRIPT_EXT=$helper
+      sudo -n -E "$helper" "$@" && exit $?
+    fi
+    log "creating helper script"
+    local t=$(tempfile -m  700 -p psudo -s ".$USER")
+    cat "$0" >> "$t"
+    chmod -rw "$t"
+    ln -sf "$t" "$helper"
+    export PSUDO_LOG_SCRIPT_EXT=$t
+    while [[ $(format_date) == $ppid_date ]]; do
+      log "sleeping to avoid race condition"
+      sleep 1
+    done
+    exec sudo -E "$t" --update-sudoers="/$whoami/$helper" "$@"
+  fi
+}
+
+maybe_unit_test() {
+  [[ $1 == "--unit-test" ]] || return 0
+  export PSUDO_LOG_SCRIPT=$0
+  ( run_unit_test; )
+  log "all tests passed"
+  return 1
+}
+
+run_unit_test() {
+  # Ask for a password if needed.
+  psudo $$ true
+
+  # Force the sudo timeout to expire.
+  sudo -k
+
+  # Show that we still have root access.
+  psudo $$ whoami
+
+  # Save the PID for a child process.
+  top_pid=$$
+  (
+    # Show that a child process still has root access.
+    psudo $top_pid whoami
+
+    (
+      # Show that a grandchild process still has root access.
+      psudo $top_pid whoami
+    )
+  )
+}
+
+psudo() {
+  "$0" "$@"
+}
+
+exec_command() {
+  shift
+  log "running $1"
+  exec "$@"
+}
+
+log() {
+  if [[ $PSUDO_LOG_SCRIPT == $0 ||
+        *:$PSUDO_LOG_SCRIPT_EXT:* == *:$0:* &&
+        $PSUDO_LOG_SCRIPT &&
+        -x $PSUDO_LOG_SCRIPT ]]; then
+    echo "${PSUDO_LOG_SCRIPT##*/}: $*" >&2
+  elif false; then
+    echo "no logging: $0 $PSUDO_LOG_SCRIPT"
+    echo "no logging: $PSUDO_LOG_SCRIPT_EXT"
+    echo "no logging: $*"
+  fi
+}
+
+die() {
+  log "$@"
+  exit 1
+}
+
+main "$@"

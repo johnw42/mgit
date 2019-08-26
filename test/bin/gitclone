@@ -1,0 +1,23 @@
+#! /usr/bin/env python2.6
+# -*- mode: python -*-
+import sys
+import os
+import subprocess as sp
+
+def main():
+    args = sys.argv[1:]
+    if len(args) == 1:
+        dir = os.path.basename(args[0])
+        if dir.endswith(".git"):
+            dir = dir[:-4]
+        run_echo("git", "clone", "/main/git/" + dir)
+        run_echo("ctags", "-e", cwd=dir)
+        run_echo("visit-tags-table", cwd=dir)
+    else:
+        run_echo("git", "clone", *args, cwd=dir)
+
+def run_echo(*cmd, **kw):
+    print "#", " ".join(cmd)
+    sp.Popen(cmd, **kw).wait()
+    
+main()

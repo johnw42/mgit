@@ -1,0 +1,3 @@
+#! /usr/bin/env zsh
+
+emacs-eval '(find-file-other-frame $1)' "$(abspath $1)"

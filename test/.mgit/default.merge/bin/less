@@ -1,0 +1,182 @@
+#! /usr/bin/python
+"""Wrapper for less.
+
+This script emulates less's --quit-if-one-screen flag, with the
+following enhancements:
+
+- If the input doesn't fill the screen, no control characters are
+  sent, as with with -X flag.
+- The height of the shell prompt is taken into account.
+"""
+
+import os
+import os.path
+import subprocess
+import sys
+import fcntl
+import termios
+import struct
+import logging
+
+from jrw import wrapper
+
+PROMPT_LINES = 2
+
+LESS_PROGRAM = wrapper.FindWrappedProgram()
+
+def GetTerminalSize():
+  layout = 'HHHH'
+  winsz = struct.pack(layout, 0, 0, 0, 0)
+  winsz = fcntl.ioctl(1, termios.TIOCGWINSZ, winsz)
+  h, w, hp, wp = struct.unpack(layout, winsz)
+  try:
+    h = int(os.getenv('LINES', ''))
+  except ValueError:
+    pass
+  try:
+    w = int(os.getenv('COLUMNS', ''))
+  except ValueError:
+    pass
+  return w, h
+
+def ShowStdin(less_opts, max_lines, max_line_length):
+  logging.info('ShowStdin')
+  lines = WriteOrBufferLines(sys.stdin, max_lines, max_line_length)
+  if lines:
+    with wrapper.PopenWrappedProgram(less_opts) as proc:
+      try:
+        logging.debug('Copying buffered lines.')
+        for line in lines:
+          proc.stdin.write(line)
+        logging.debug('Copying new lines.')
+        for line in sys.stdin:
+          proc.stdin.write(line)
+      except IOError:
+        pass
+      logging.debug('Closing stdin.')
+      proc.stdin.close()
+      sys.exit(proc.wait())
+
+    # read_fd, write_fd = os.pipe()
+    # if os.fork() == 0:
+    #   logging.info('In subprocess...')
+    #   for line in lines:
+    #     logging.info('Writing %r', line)
+    #     os.write(write_fd, line)
+    #   sys.exit(0)
+    # os.dup2(0, read_fd)
+    # logging.info('Executing %s', LESS_PROGRAM)
+    # wrapper.ExecWrappedProgram([])
+
+def ShowFile(filename, less_opts, max_lines, max_line_length):
+  logging.info('ShowFile')
+  lessopen = os.getenv('LESSOPEN')
+  lines = []
+  if (lessopen and
+      lessopen.startswith('|') and
+      not lessopen.startswith('|-')):
+    logging.info('Running lessopen')
+    proc = subprocess.Popen(lessopen[1:] % filename,
+                            shell=True,
+                            stdout=subprocess.PIPE)
+    lines = WriteOrBufferLines(proc.stdout, max_lines, max_line_length)
+    proc.stdout.close()
+    proc.wait()
+    if lines == []:
+      logging.info('lessopen returned no output')
+  if lines == []:
+    with open(filename) as stream:
+      lines = WriteOrBufferLines(stream, max_lines, max_line_length)
+  if lines:
+    logging.info('len(lines) = %r', len(lines))
+    wrapper.ExecWrappedProgram(less_opts + ['--', filename])
+
+def WriteOrBufferLines(stream, max_lines, max_line_length):
+  """Buffers and possibly writes lines from a stream.
+
+  This function reads lines from `stream`, bufferes them, and either
+  writes the buffered lines to stdout or returns the buffer.
+
+  The buffer is written only if the following conditions hold:
+  - No line is longer and `max_line_length`.
+  - The buffer contains at most `max_lines` lines.
+  - The buffer is not empty.
+
+  Returns:
+    None if the buffer has been written, otherwise a list of buffered
+    lines.  Returns [] when no lines could be read.
+  """
+  lines = []
+  effective_line_count = 0
+  has_escapes = False
+  for line in stream:
+    lines.append(line)
+    effective_line_count += ((len(line) + max_line_length - 1) //
+                             max_line_length)
+    has_escapes = has_escapes or '\e' in line
+    if effective_line_count > max_lines:
+      break
+    # if (len(lines) > max_lines or
+    #     len(line.rstrip('\n')) > max_line_length):
+    #   break
+  else:
+    if lines:
+      logging.info('Writing %r buffered lines', len(lines))
+      if effective_line_count > len(lines) and not has_escapes:
+        start = subprocess.check_output(['tput', 'setaf', '2'])
+        end = subprocess.check_output(['tput', 'sgr0'])
+        for i in range(len(lines)):
+          line = lines[i]
+          if len(line) > max_line_length:
+            line = line[:max_line_length] + start + line[max_line_length:] + end
+          lines[i] = line
+      sys.stdout.writelines(lines)
+      return None
+  logging.info('Returning buffered lines.')
+  return lines
+
+def ExecLess(extra_opts=None):
+  logging.info('ExecLess')
+  if extra_opts:
+    os.putenv('LESS', os.getenv('LESS', '') + ' ' + extra_opts)
+  wrapper.ExecWrappedProgram()
+
+def main():
+  #subprocess.ExecWrappedProgram()
+  #logging.basicConfig(level=logging.DEBUG)
+
+  if not sys.stdout.isatty():
+    logging.info('stdout is not a tty')
+    ExecLess()
+    return
+
+  opts = []
+  files = []
+  no_more_opts = False
+  for arg in sys.argv[1:]:
+    if arg == '--':
+      no_more_opts = True
+    elif not no_more_opts and arg[:1] in '-+':
+      opts.append(arg)
+    else:
+      files.append(arg)
+  logging.info('files = %r', files)
+
+  width, height = GetTerminalSize()
+  max_lines = height - PROMPT_LINES
+  max_line_length = width
+
+  try:
+    if files in [[], ['-']] and not sys.stdin.isatty():
+      ShowStdin(opts, max_lines, max_line_length)
+      return
+    elif len(files) == 1:
+      ShowFile(files[0], opts, max_lines, max_line_length)
+      return
+  except (IOError, OSError) as e:
+    logging.error('exception: %r', e)
+    ExecLess()
+  else:
+    ExecLess()
+
+main()

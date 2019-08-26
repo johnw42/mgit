@@ -1,0 +1,76 @@
+#! /usr/bin/python
+import argparse
+import logging
+import os
+import re
+import StringIO
+import subprocess
+import sys
+
+
+class App(object):
+
+  def Run_local(self, args):
+    subprocess.check_call(['chmod', '-x', '.chrome-remote-desktop-session'])
+    subprocess.check_call(['/etc/init.d/chrome-remote-desktop', 'stop'])
+
+  def Run_remote(self, args):
+    subprocess.check_call(['chmod', '+x', '.chrome-remote-desktop-session'])
+    subprocess.check_call(['/etc/init.d/chrome-remote-desktop', 'start'])
+
+  def Run_teck(self, args):
+    # Chromebook keycodes:
+    # Search (Super_L) = 133, 0x85
+    # Ctrl_L = 37, 0x25
+    # Alt_L = 64, 0x40
+    # Alt_R = 108, 0x6c
+    # Ctrl_R (Super_R) = 134, 0x86
+    # Caps_Lock = 66
+
+    # mod1 = normal alt key
+    # mod5 = emacs s
+
+    self.Xmodmap("""\
+clear control
+clear mod1
+clear mod2
+clear mod3
+clear mod4
+clear mod5
+clear lock
+keycode 94 = acute diaeresis
+keycode 64 = Alt_L
+keycode 105 = Alt_R
+keycode 37 = Control_L
+keycode 105 = Control_R
+keycode 134 = Control_R
+keycode 133 = Super_L
+add control = Control_L
+add control = Control_R
+add mod1 = Alt_L
+add mod1 = Alt_R
+add mod4 = Super_L
+add mod4 = Super_R
+""")
+    print 'Using TECK keyboard.'
+
+  def Xmodmap(self, script):
+    proc = subprocess.Popen(['xmodmap', '-'], stdin=subprocess.PIPE)
+    proc.communicate(script)
+
+
+def main():
+  parser = argparse.ArgumentParser(description='')
+  parser.add_argument('--debug', action='store_true')
+  parser.add_argument('env')
+  args = parser.parse_args()
+  if args.debug:
+    logging.basicConfig(level=logging.DEBUG)
+  try:
+    run = getattr(App(), 'Run_' + args.env)
+  except AttributeError:
+    sys.exit('Unknown environment: %r' % args.env)
+  os.chdir(os.environ['HOME'])
+  run(args)
+
+if __name__ == '__main__': main()

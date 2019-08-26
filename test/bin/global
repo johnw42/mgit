@@ -1,0 +1,22 @@
+#! /usr/bin/python
+"""Wrapper for GNU global 5.x.
+
+This wrapper emulates the -d flag from global 6.x.
+"""
+
+import logging
+import sys
+
+from jrw import wrapper
+
+def main():
+  #logging.basicConfig(level=logging.DEBUG)
+  args = sys.argv[1:]
+  for i in range(len(args)):
+    if args[i].startswith('-d'):
+      args[i] = '-e' + args[i][2:]
+      break
+  wrapper.ExecWrappedProgram(args)
+
+if __name__ == '__main__':
+  main()

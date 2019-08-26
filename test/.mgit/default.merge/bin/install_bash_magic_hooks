@@ -1,0 +1,133 @@
+#! /usr/bin/python
+import argparse
+import logging
+import os
+import os.path
+import re
+import subprocess
+import sys
+
+
+UUID_PATTERN = '-'.join('[0-9a-f]{' + str(n) + '}' for n in [8, 4, 4, 4, 12])
+
+
+def IsUuid(s):
+  m = re.match(UUID_PATTERN, s)
+  return m and m.end() == len(s)
+
+
+def AppendLineWithUuid(path, uuid, content_line):
+  assert IsUuid(uuid)
+  assert '\n' not in content_line
+  assert uuid in content_line
+  content_line += '\n'
+
+  with open(path) as stream:
+    old_content = stream.readlines()
+
+  new_content = []
+  found_uuid_line = False
+  for i, line in enumerate(old_content):
+    line = line.rstrip('\n') + '\n'
+    if uuid in line:
+      if found_uuid_line:
+        continue
+      else:
+        line = content_line
+        found_uuid_line = True
+    new_content.append(line)
+
+  if not found_uuid_line:
+    new_content.append(content_line)
+
+  if new_content != old_content:
+    with open(path, 'w') as stream:
+      stream.writelines(new_content)
+
+
+def EnsureParentDir(path):
+  parent = os.path.dirname(path)
+  if parent and not os.path.isdir(parent):
+    os.makedirs(parent, 0777)
+
+
+def InstallDefaultContent(path, content):
+  assert content.endswith('\n')
+  EnsureParentDir(path)
+  with open(path, 'w') as stream:
+    stream.write(content)
+
+
+def InstallReadOnlyContent(path, uuid, content):
+  assert IsUuid(uuid)
+  assert content.endswith('\n')
+  assert uuid in content
+  EnsureParentDir(path)
+
+  old_content = None
+  if os.path.exists(path):
+    with open(path) as stream:
+      old_content = stream.read()
+    assert uuid in old_content
+    assert not os.access(path, os.W_OK)
+    if old_content == content:
+      return
+    os.chmod(path, 0600)
+    os.remove(path)
+  fd = os.open(path, os.O_WRONLY | os.O_CREAT, 0444)
+  with os.fdopen(fd, 'w') as stream:
+    stream.write(content)
+
+
+def Unindent(s):
+  lines = s.split('\n')
+  last_line = lines[-1]
+  for i in range(len(lines)):
+    assert lines[i].startswith(last_line)
+    lines[i] = lines[i][len(last_line):]
+  assert lines[-1] == ''
+  return '\n'.join(lines)
+
+
+def Format(s, *args, **kwargs):
+  return Unindent(s).format(*args, **kwargs)
+
+
+class App(object):
+
+  def Run(self, args):
+    os.chdir(os.path.expanduser('~'))
+    uuid = '1e89500b-0672-4c2c-86b7-978687c472e3'
+    AppendLineWithUuid(
+        '.bashrc', uuid,
+        'for _ in ~/.bashrc.d/*.sh; do source "$_"; done #' + uuid)
+    AppendLineWithUuid(
+        '.bash_profile', uuid,
+        'for _ in ~/.bash_profile.d/*.sh; do source "$_"; done #' + uuid)
+    InstallDefaultContent(
+        '.bash_prompt', Format("""\
+        # -*- mode: shell-script; sh-basic-offset: 2 -*-
+        """))
+    AppendLineWithUuid(
+        '.bash_prompt',  uuid,
+        'for _ in ~/.bash_prompt.d/*.sh; do source "$_"; done #' + uuid)
+
+
+    uuid = '8f90b58b-ef71-4605-878a-9d27b2ba3ca5'
+    InstallReadOnlyContent(
+        '.bash_prompt.d/ZZ_local_prompt.sh', uuid,
+        Format("""\
+        #{0}
+        [[ -f {1} ]] && source {1}
+        """, uuid, '.local_bash_prompt'))
+
+def main():
+  parser = argparse.ArgumentParser(description='')
+  parser.add_argument('--debug', action='store_true')
+  args = parser.parse_args()
+  if args.debug:
+    logging.basicConfig(level=logging.DEBUG)
+  App().Run(args)
+
+
+if __name__ == '__main__': main()

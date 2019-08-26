@@ -1,0 +1,14 @@
+#! /bin/bash
+# johnw
+
+# This script prints the names of all the files indexed by the 'tags' file.
+
+unset EXTRA
+for PATTERN
+do
+	EXTRA="${EXTRA-0} || \$1 ~ /\\.$PATTERN\$/"
+done
+
+SCRIPT="BEGIN { FS = \"\t\" }
+	!/^!/ && \$NF == \"F\" && (${EXTRA-1}) { gsub(\"\\\\\\\\\",\"/\"); print \$2 }"
+gawk "$SCRIPT" tags | sort -u

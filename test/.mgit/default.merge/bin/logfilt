@@ -1,0 +1,202 @@
+#! /usr/bin/python
+
+import argparse
+import datetime
+import fileinput
+import math
+import re
+import sys
+
+
+LINE_PATTERN = re.compile(
+    r'^ \[ *[0-9]+ +(?P<time>[0-9:.]+)] \[ *(?P<delta>[0-9.]+)s] \[(?P<logger>([^]]+))] \[(?P<level>([A-Z]+))] (?P<content>.*)')
+
+class LogLevel(object):
+
+  @staticmethod
+  def _StaticInit():
+    for level in [
+        LogLevel('ALL', 0),
+        LogLevel('FINEST', 1),
+        LogLevel('FINER', 2),
+        LogLevel('FINE', 3),
+        LogLevel('CONFIG', 4),
+        LogLevel('INFO', 5),
+        LogLevel('WARNING', 6),
+        LogLevel('SEVERE', 7),
+        LogLevel('NONE', 8)]:
+      setattr(LogLevel, level.name, level)
+
+  def __init__(self, name, value):
+    self.name = name
+    self.value = value
+
+  def __str__(self):
+    return self.name
+
+  def __cmp__(self, other):
+    return cmp(self.value, other.value)
+
+  @staticmethod
+  def Parse(name):
+    return getattr(LogLevel, name.upper())
+
+
+LogLevel._StaticInit()
+
+
+class LoggerLevel(object):
+
+  def __init__(self, s):
+    self.logger_name, sep, log_level = s.partition('=')
+    self.log_level = LogLevel.Parse(log_level)
+
+  def __str__(self):
+    return '%s=%s' % (self.logger_name, self.log_level)
+
+
+class LogLine(object):
+
+  @staticmethod
+  def Parse(line):
+    m = LINE_PATTERN.match(line)
+    if m:
+      result = LogLine()
+      result.logger_name = m.group('logger')
+      result.log_level = LogLevel.Parse(m.group('level'))
+      result.time_spec = TimeSpec(
+          datetime.datetime.strptime(m.group('time'), '%H:%M:%S.%f').time(),
+          datetime.timedelta(seconds=float(m.group('delta'))))
+      result.content = m.group('content')
+      return result
+    else:
+      return None
+
+
+class TimeSpec(object):
+
+  def __init__(self, *args):
+    self.time = None
+    self.delta = None
+    if len(args) == 1:
+      arg = args[0]
+      if isinstance(arg, str):
+        if arg.endswith('s'):
+          seconds = float(arg[:-1].strip())
+          self.delta = datetime.timedelta(seconds=seconds)
+          return
+        else:
+          m = re.match(r'([0-9]+):([0-9]+)(?::([0-9.]+))?', arg)
+          if not m:
+            raise TypeError('Invalid timespec: %r' % arg)
+          hour, min, sec = m.groups()
+          hour = int(hour)
+          min = int(min)
+          msec, sec = math.modf(float(sec or '0'))
+          msec = int(msec * 1.0e6)
+          sec = int(sec)
+          self.time = datetime.time(hour, min, sec, msec)
+          return
+    elif len(args) == 2:
+      self.time, self.delta = args
+      return
+    raise TypeError('Invalid timespec: %r' % args)
+
+  def __cmp__(self, other):
+    if self.time is not None and other.time is not None:
+      return cmp(self.time, other.time)
+    else:
+      return cmp(self.delta, other.delta)
+
+class App(object):
+
+  def __init__(self):
+    self._logger_names = set()
+    self._logger_levels = {
+        '': LogLevel.NONE,
+        }
+
+    p = argparse.ArgumentParser()
+    p.add_argument(
+        '-L', action='append', type=LoggerLevel, metavar='LOGGER=LEVEL')
+    p.add_argument(
+        '-s', '--summary', action='store_true')
+    p.add_argument(
+        '-a', '--after', type=TimeSpec, metavar='TIMESPEC')
+    p.add_argument(
+        '-b', '--before', type=TimeSpec, metavar='TIMESPEC')
+    p.add_argument(
+        '-x', '--exclude', action='append', metavar='PATTERN')
+    p.add_argument('file', nargs='+')
+
+    args = p.parse_args()
+
+    self._summary_mode = args.summary
+    self._before_time = args.before
+    self._after_time = args.after
+    self._exclude_patterns = [re.compile(p) for p in args.exclude or []]
+
+    for logger_level in args.L:
+      self._logger_levels[logger_level.logger_name] = logger_level.log_level
+
+    if args.file:
+      for filename in args.file:
+        self._ProcessFile(filename)
+    else:
+      self._ProcessFile('-')
+
+    if self._summary_mode:
+      self._PrintSummary()
+
+
+  def _ProcessFile(self, filename):
+    if filename == '-':
+      self._ProcessStream(sys.stdin)
+    else:
+      with open(filename) as stream:
+        self._ProcessStream(stream)
+    # else:
+    #   stream = urllib2.urlopen(filename)
+    #   try:
+    #     ProcessStream(stream)
+    #   finally:
+    #     stream.close()
+
+
+  def _ProcessStream(self, stream):
+    is_loggable = False
+    for line in stream:
+      log_line = LogLine.Parse(line)
+      if log_line:
+        if self._summary_mode:
+          self._logger_names.add(log_line, logger_name)
+        else:
+          is_loggable = self._IsLoggable(log_line)
+      if is_loggable:
+        sys.stdout.write(line)
+
+
+  def _IsLoggable(self, log_line):
+    if self._before_time and log_line.time_spec > self._before_time:
+      return False
+    if self._after_time and log_line.time_spec < self._after_time:
+      return False
+    for pattern in self._exclude_patterns:
+      if pattern.search(log_line.content):
+        return False
+    parts = log_line.logger_name.split('.')
+    while True:
+      key = '.'.join(parts)
+      target_level = self._logger_levels.get(key)
+      if target_level:
+        return log_line.log_level >= target_level
+      if not parts:
+        return False
+      del parts[-1]
+
+  def _PrintSummary(self):
+    for name in sorted(self._logger_names):
+      print name
+
+
+App()

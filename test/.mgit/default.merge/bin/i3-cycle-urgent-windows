@@ -1,0 +1,9 @@
+#! /usr/bin/python
+
+from jrw import i3
+
+def main():
+  i3.CycleWindows(
+      w for w in i3.GetTree().GetWindows() if w.is_urgent)
+
+main()

@@ -1,0 +1,138 @@
+#! /usr/bin/env python3
+"""
+Runs a process and calls notify-send to report the result.
+"""
+
+import argparse
+import subprocess
+import sys
+import threading
+import time
+
+import tkinter as tk
+
+# http://standards.freedesktop.org/icon-naming-spec/icon-naming-spec-latest.html
+# https://wiki.ubuntu.com/NotificationDevelopmentGuidelines#How_do_I_get_these_slick_icons
+# https://developer.gnome.org/notification-spec
+# http://www.galago-project.org/specs/notification/
+
+def NotifySend(summary, body=None, icon=None, make_transient=True):
+  """Call notify-send with appropriate arguments."""
+  cmd = ['notify-send']
+  if make_transient:
+    cmd += ['--hint=int:transient:1']
+  if icon:
+    cmd += ['-i', icon]
+  cmd += ['--', summary]
+  if body:
+    cmd += [body]
+  subprocess.call(cmd)
+
+
+def NotifyConfirm(message, success):
+  frame = tk.Frame()
+  frame.master.title('Notification')
+  frame.grid()
+  label = tk.Label(frame, text=message, font=('Sans', 10))
+
+  def OnClick(e):
+    frame.quit()
+  label.grid(ipadx=100, ipady=100)
+  label.bind('<ButtonPress-1>', OnClick)
+
+  if success:
+    bgColors = ['black', '#0f0']
+    fgColors = ['white', 'black']
+  else:
+    bgColors = ['black', '#f00']
+    fgColors = ['white', 'white']
+  def ToggleColor(state=0):
+    label.config(bg=bgColors[state], fg=fgColors[state])
+    frame.after(500, ToggleColor, (state + 1) % 2)
+
+  ToggleColor()
+  frame.mainloop()
+
+
+def FormatDuration(seconds):
+  """Formats a duration, specified as a number of seconds."""
+  seconds_per_minute = 60
+  seconds_per_hour = 60 * seconds_per_minute
+  seconds_per_day = 24 * seconds_per_hour
+
+  seconds = int(seconds)
+  days = seconds // seconds_per_day
+  seconds %= seconds_per_day
+  hours = seconds // seconds_per_hour
+  seconds %= seconds_per_hour
+  minutes = seconds // seconds_per_minute
+  seconds %= seconds_per_minute
+
+  if days:
+    result = '{}d{}h'.format(days, hours)
+  elif hours:
+    result = '{}h{}m'.format(hours, minutes)
+  elif minutes:
+    result = '{}m{}s'.format(minutes, seconds)
+  else:
+    result = '{}s'.format(seconds)
+  return result
+
+
+def main():
+  parser = argparse.ArgumentParser()
+  parser.add_argument(
+      '-d', '--description',
+      help=('Set the description of the command being run. Used as the '
+            'body of the notification in place of the literal command line.'))
+  parser.add_argument(
+      '-i', '--interval', type=int,
+      help=('Generate a notification after INTERVAL seconds (0=never).'))
+  parser.add_argument(
+      '--interval-factor', type=int, metavar='FACTOR', default=2,
+      help=('Increase the notification interval by FACTOR each '
+            'time a notification is shown.'))
+  parser.add_argument(
+      'command', nargs=argparse.REMAINDER,
+      help='The command to execute.')
+  args = parser.parse_args()
+  if not args.description:
+    args.description = ' '.join(args.command)
+  proc = subprocess.Popen(args.command)
+  if args.interval:
+    start_time = time.time()
+    def PrintAtIntervals():
+      interval = args.interval
+      elapsed = 0
+      while True:
+        time.sleep(interval - elapsed)
+        interval *= args.interval_factor
+        if proc.returncode is not None: break
+        elapsed = time.time() - start_time
+        NotifySend(
+            icon='face-uncertain',
+            summary='Process running for {}...'.format(FormatDuration(elapsed)),
+            body=args.description)
+    thread = threading.Thread(target=PrintAtIntervals)
+    thread.setDaemon(True)
+    thread.start()
+  success = proc.wait() == 0
+  if success:
+    icon = 'face-smile'
+    summary = 'Command succeeded!'
+  else:
+    icon = 'face-sick'
+    summary = 'Command returned {}.'.format(proc.returncode)
+  # NotifySend(
+  #     icon=icon,
+  #     summary=summary,
+  #     body=args.description)
+  message = summary
+  if args.description:
+    message += '\n' + args.description
+  NotifyConfirm(
+      message=message,
+      success=success)
+  sys.exit(proc.returncode)
+
+main()

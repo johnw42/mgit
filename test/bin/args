@@ -1,0 +1,9 @@
+#! /bin/bash
+# This script just prints out its arguments for debugging purposes.
+
+echo "\$#=$#"
+i=0
+for arg; do
+  i=$((i+1))
+  echo "\$$i='$arg'"
+done

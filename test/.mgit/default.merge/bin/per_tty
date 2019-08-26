@@ -1,0 +1,11 @@
+#! /bin/bash
+
+set -e
+this=$0
+IFS=
+
+main() {
+  true
+}
+
+main

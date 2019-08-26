@@ -1,0 +1,198 @@
+#! /usr/bin/python
+
+import os
+import re
+import sys
+import subprocess
+
+
+FORBIDDEN_STRINGS = [
+  'X' * 3
+]
+
+
+# Don't allow committing to the 'work' branch.
+branch = subprocess.Popen(['git', 'name-rev', '--name-only', 'HEAD'],
+                          stdout=subprocess.PIPE).communicate()[0].rstrip('\n')
+if branch == 'work':
+  print 'Can\'t commit to branch %r!' % branch
+  sys.exit(1)
+
+
+# See if we're going a git5 merge.  If so, we only want to look at
+# files where there were conflicts.
+is_git5_merge = False
+conflict_paths = set()
+in_conflicts = False
+CONFLICT_PREFIX = ' ' * 8
+if os.path.isfile('.git/MERGE_MSG'):
+  with open('.git/MERGE_MSG') as io:
+    for line in io:
+      line = line.rstrip('\n')
+      if in_conflicts:
+        if line.startswith(CONFLICT_PREFIX):
+          conflict_paths.add(line[len(CONFLICT_PREFIX):])
+        else:
+          in_conflicts = False
+      if not in_conflicts:
+        if line.startswith('git5: sync with p4 at '):
+          is_git5_merge = True
+        elif line == 'Conflicts:':
+          in_conflicts = True
+
+errors = 0
+
+
+# if os.path.isdir('google3'):
+#   if subprocess.call(['git5', 'lint']) != 0:
+#     errors += 1
+# else:
+
+
+# Find the commit to diff against.
+rev_parse_proc = subprocess.Popen(['git', 'rev-parse', '--verify', 'HEAD'],
+                                  stdout=subprocess.PIPE)
+rev_parse_proc.communicate()
+if rev_parse_proc.returncode == 0:
+  against = 'HEAD'
+else:
+  # Initial commit: diff against an empty tree object
+  against = '4b825dc642cb6eb9a060e54bf8d69288fbee4904'
+
+
+# List of language-specific prefixes of lines that should not be
+# checked for length.
+LONG_LINE_PREFIXES = [
+    ('.py', 'from '),
+    ('.py', 'import '),
+    ('.java', 'import '),
+]
+
+MAX_LINE_LENGTHS = [
+    #('/BUILD', None),
+    #('/build_defs', None),
+    #('/manifest.json', None),
+    #('.html', None),
+    ('.cc', 80),
+    ('.cpp', 80),
+    ('.c', 80),
+    ('.h', 80),
+    ('.js', 80),
+    ('.py', 80),
+    ('.sh', 80),
+    ('.java', 100),
+    ('', None),
+]
+
+JSDEPS_LINE1 = ('#@#@#@#@#@#@#@#@#@#@#@#@#@#@#@#@#@#@#@#@'
+                '#@#@#@#@#@#@#@#@#@#@#@#@#@#@#@#@#@#@#@#@')
+JSDEPS_LINE2 = ('# All rules between these lines generated '
+                'by GenJsDeps, please do not edit.')
+
+class FileChecker(object):
+
+  def __init__(self, path):
+    self.lines = subprocess.Popen(
+        ['git', 'show', ':0:' + path],
+        stdout=subprocess.PIPE).communicate()[0].split('\n')
+    self.added_lines = set()
+
+    self.path = path
+    self.skip_line_length_check = False
+    self.max_line_length = None
+    path_to_check = '/' + self.path
+    for suffix, max_line_length in MAX_LINE_LENGTHS:
+      if path_to_check.endswith(suffix):
+        self.max_line_length = max_line_length
+        break
+    self.is_build_file = path_to_check.endswith('/BUILD')
+    if path_to_check.endswith('/deps.js'):
+      self.skip_line_length_check = True
+
+  def Check(self):
+    prev_line = ''
+    for self.line_num, line in enumerate(self.lines, 1):
+      self.CheckLine(line, prev_line)
+      if self.line_num in self.added_lines:
+        self.CheckAddedLine(line)
+      prev_line = line
+
+  def Error(self, message):
+    global errors
+    errors += 1
+    print '%s:%s: %s' % (self.path, self.line_num, message)
+
+  def CheckLine(self, line, prev_line):
+    if self.is_build_file:
+      if (not self.skip_line_length_check and
+          prev_line == JSDEPS_LINE1 and
+          line == JSDEPS_LINE2):
+        self.skip_line_length_check = True
+      elif (self.skip_line_length_check and
+          prev_line == JSDEPS_LINE2 and
+          line == JSDEPS_LINE1):
+        self.skip_line_length_check = False
+
+  def CheckAddedLine(self, line):
+    for forbidden in FORBIDDEN_STRINGS:
+      if forbidden in line:
+        self.Error('line contains forbidden string %r' % forbidden)
+
+    if line.endswith(' '):
+      self.Error('trailing whitespace')
+
+    if not self.skip_line_length_check and self.max_line_length:
+      check_line_length = True
+      for path_suffix, line_prefix in LONG_LINE_PREFIXES:
+        if self.path.endswith(path_suffix) and line.startswith(line_prefix):
+          check_line_length = False
+          break
+      if check_line_length:
+        if len(line) > self.max_line_length:
+          self.Error('line length exceeds %d characters' % self.max_line_length)
+
+
+diff_proc = subprocess.Popen(['git', 'diff-index',
+                              '--cached', '-p',
+                              against, '--'],
+                             stdout=subprocess.PIPE)
+try:
+  in_chunk = False
+  file_checker = None
+  added_lines = []
+  for line in diff_proc.stdout:
+    line = line.rstrip('\n')
+    if in_chunk:
+      if line[0] == ' ':
+        added_line_num += 1
+        deleted_line_num += 1
+      elif line[0] == '+':
+        if not is_git5_merge or added_path in conflict_paths:
+          file_checker.added_lines.add(added_line_num)
+        added_line_num += 1
+      elif line[0] == '-':
+        deleted_line_num += 1
+      else:
+        in_chunk = False
+    if not in_chunk:
+      if line.startswith('@@'):
+        m = re.match(r'@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@', line)
+        deleted_line_num = int(m.group(1))
+        added_line_num = int(m.group(2))
+        in_chunk = True
+      elif line.startswith('--- a/'):
+        deleted_path = line[6:]
+      elif line.startswith('+++ b/'):
+        added_path = line[6:]
+        if file_checker:
+          file_checker.Check()
+        file_checker = FileChecker(added_path)
+  if file_checker:
+    file_checker.Check()
+finally:
+  diff_proc.stdout.close()
+  diff_proc.wait()
+
+if errors > 0:
+  if os.getenv('GIT_CONFIG_NOGLOBAL') != '1':
+    sys.exit(1)

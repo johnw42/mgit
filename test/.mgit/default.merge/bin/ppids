@@ -1,0 +1,19 @@
+#! /bin/bash
+
+main() {
+  local index pid=${1:-$$} ppid
+  local stack1=() stack2=()
+  local -A seen=()
+
+  while [ -n "$pid" ] && [ $pid != 0 ]; do
+    echo $pid
+    pid=$(ps --pid $pid --format ppid --no-headers)
+  done
+}
+
+main "$@"; exit
+
+
+# Local Variables:
+# sh-basic-offset: 2
+# End:

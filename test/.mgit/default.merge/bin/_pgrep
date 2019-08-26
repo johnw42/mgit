@@ -1,0 +1,7 @@
+#! /bin/bash
+
+if [[ -t 1 ]]; then
+  ps -o 'pid euser cmd' $(pgrep "$@")
+else
+  pgrep "$@"
+fi

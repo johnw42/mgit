@@ -1,0 +1,3 @@
+#! /bin/bash
+
+runlog /home/jrw/src/xsendevt-0.6/xsendevt -mk "$@"

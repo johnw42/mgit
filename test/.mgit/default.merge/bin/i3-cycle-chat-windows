@@ -1,0 +1,17 @@
+#! /usr/bin/python
+
+import os.path
+
+from jrw import i3
+
+BABEL_CLASS = 'crx_nckgahadagoaajjgafhacjanaoiihapd'
+
+def main():
+  chat_windows = [w for w in i3.GetTree().GetWindows()
+                  if w.XGetClassHint()[0] == BABEL_CLASS]
+  # chat_windows = (
+  #     [w for w in chat_windows if w.is_urgent] +
+  #     [w for w in chat_windows if not w.is_urgent])
+  i3.CycleWindows(chat_windows)
+
+main()

@@ -1,0 +1,29 @@
+#! /bin/bash
+
+# Script to be run each time a prompt is shown.
+
+set -e
+IFS=
+this=$0
+
+on_exit() {
+  touch $XDG_RUNTIME_DIR/jrw/last_prompt
+}
+
+maybe_prodcertstatus() {
+  if [[ $seconds_since_last_prompt -gt 3 ]]; then
+    if type -p prodcertstatus >/dev/null; then
+      if ! prodcertstatus -q; then
+        log_for $this Please run prodaccess.
+      fi
+    fi
+  fi
+}
+
+main() {
+  trap on_exit 0
+  local seconds_since_last_prompt=$(seconds_since_last_prompt)
+  maybe_prodcertstatus
+}
+
+main

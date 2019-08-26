@@ -1,0 +1,15 @@
+#! /bin/bash
+
+# A program to run when things are going wrong.
+
+here=${0%/*}
+PATH=$HERE:/usr/bin:/bin
+
+main() {
+  per_new_host
+  cabal install \
+        optparse-applicative \
+        split
+}
+
+main

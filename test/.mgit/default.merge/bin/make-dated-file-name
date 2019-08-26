@@ -1,0 +1,16 @@
+#! /bin/bash
+[[ $# -ge 1 ]] || exit 1
+prefix=$1
+suffix=$2
+
+date=$(date +%Y%m%d)
+
+index=0
+while true; do
+  name=$(printf '%s%d.%04d%s' $prefix $date $index $suffix) 
+  if [[ ! -e $name ]]; then
+    echo "$name"
+    exit
+  fi
+  ((++index))
+done

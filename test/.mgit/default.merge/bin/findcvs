@@ -1,0 +1,8 @@
+#! /bin/sh
+
+# Echo the names of all the files managed by CVS in any of the directories
+# specified as arguments (or the current directory).  Recusrive.
+
+for DIR in $(find "$@" -name CVS); do
+  sed "/^\\//!d;s:/\\([^/]*\\)/[0-9].*:${DIR%/CVS}/\\1:" $DIR/Entries
+done

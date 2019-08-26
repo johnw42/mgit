@@ -1,0 +1,20 @@
+#! /bin/bash
+
+
+# Figure out which emacs instance to use.
+here=$PWD
+server_name=server
+while true; do
+  if [[ -f .emacs-instance ]]; then
+    server_name=$(<.emacs-instance)
+    break
+  fi
+  if [[ $PWD = / ]]; then
+    break
+  fi
+  cd ..
+done
+cd "$here"
+
+export ALTERNATE_EDITOR=
+exec emacsclient -s "$server_name" "$@"

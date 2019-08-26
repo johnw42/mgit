@@ -1,0 +1,20 @@
+#! /usr/bin/env python
+
+import sys, os, signal, time
+
+try:
+    minutes = float(sys.argv[1])
+except IndexError:
+    sys.exit("Argument missing: number of minutes")
+except ValueError:
+    sys.exit("Argument %r should be a number of minutes" % sys.argv[1])
+
+print "Timing for", minutes, "minutes starting at", time.strftime("%r")
+if os.fork() == 0:
+    def handler(sig, frame):
+        sys.exit("%s: killed with signal %s" % (sys.argv[0], sig))
+    signal.signal(signal.SIGTERM, handler)
+    print "pid:", os.getpid()
+    import time, os.path
+    time.sleep(minutes * 60.0)
+    os.execl(os.path.join(sys.path[0], "alert"), "alert", *sys.argv[2:])

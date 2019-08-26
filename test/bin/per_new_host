@@ -1,0 +1,177 @@
+#! /bin/bash
+
+set -e
+IFS='
+'
+this_script=$0
+bin_dir="${0%/*}"
+sudo_loop=
+
+# Functions starting with "r_" are run as root if possible.  Functions
+# starting with "u_" are run as the user.
+
+# Install Ubuntu packages.
+s00_apt_get() {
+  $fast_mode || sudo apt-get update
+  sudo apt-get -y \
+    install \
+    cgdb \
+    emacs24 \
+    fonts-inconsolata \
+    git \
+    kcddiff3 \
+    kde-plasma-desktop \
+    libicu-dev \
+    synaptic \
+    tmux \
+    install-info \
+    vcsh
+}
+
+# Get home directory.
+s10_homedir() {
+  # (
+  #   cd $bin_dir
+  #   if [[ ! -d ~/.config/vcsh/repo.d/homedir.git ]]; then
+  #     vcsh clone $(git rev-parse --show-toplevel) homedir
+  #     vcsh homedir config remote.origin.url git@github.com:johnw42/homedir.git
+  #   fi
+  # )
+  true
+}
+
+s50_haskell_download() {
+  if [[ ! -d /usr/local/haskell/ghc-7.8.3-x86-64 ]]; then
+    if [[ ! -f /tmp/haskell-platform-2014.2.0.0-unknown-linux-x86_64.tar.gz ]]; then
+      (cd /tmp; curl -OL 'https://www.haskell.org/platform/download/2014.2.0.0/haskell-platform-2014.2.0.0-unknown-linux-x86_64.tar.gz')
+    fi
+  fi
+}
+
+s51_haskell_unpack() {
+  if [[ ! -d /usr/local/haskell/ghc-7.8.3-x86_64 ]]; then
+    (
+      cd /
+      sudo tar xvf /tmp/haskell-platform-2014.2.0.0-unknown-linux-x86_64.tar.gz
+    )
+  fi
+  sudo /usr/local/haskell/ghc-7.8.3-x86_64/bin/activate-hs
+}
+
+s60_haskell_cabal_update() {
+  $fast_mode || cabal update
+}
+
+s70_haskell_cabal_install() {
+  cabal \
+    install -j16 \
+    HUnit \
+    QuickCheck \
+    hindent \
+    haskell-docs \
+    optparse-applicative \
+    split \
+    structured-haskell-mode
+}
+
+s50_emacs25() {
+  mkdir -p ~/git
+  (
+    cd ~/git
+    if [[ ! -d emacs ]]; then
+      git clone git@github.com:johnw42/emacs.git
+    fi
+    if [[ ! -f ~/.local/bin/emacs ]]; then
+      cd emacs
+      git checkout homedir
+      sudo apt-get -y build-dep emacs24 || true
+      if [[ ! -f Makefile ]]; then
+        ./autogen.sh
+        ./configure \
+          --prefix=$HOME/.local \
+          --with-file-notification=inotify \
+          --without-pop \
+          --disable-dependency-tracking
+      fi
+      make -j32  # Too many => swapping!
+      make install
+      emacs --batch $bin_dir/../.emacs
+    fi
+  )
+}
+
+# Various Gnome/GTK settings.
+s50_gtk() {
+  # Cause Chrome to show buttons of the left, as in Unity.
+  gconftool-2 \
+    --set /apps/metacity/general/button_layout \
+    --type string "close,maximize,minimize:"
+
+  # Use emacs theme for GTK keybindings.
+  gsettings set org.gnome.desktop.interface gtk-key-theme Emacs
+
+  # Get rid of crazy scrollbars.
+  gsettings set org.gnome.desktop.interface ubuntu-overlay-scrollbars false
+
+  # Use only the right Alt key for the HUD.
+  gconftool-2 --type string --set /apps/compiz-1/plugins/unityshell/screen0/options/show_hud Alt_R
+
+  # Don't use Alt key for menu items in gnome-termianl.
+  gconftool-2 --set /apps/gnome-terminal/global/use_mnemonics --type boolean false
+}
+
+on_exit() {
+  tmux bind-key -n space kill-window
+  tmux bind-key -n enter kill-window
+  echo Space or return to exit.
+}
+
+main() {
+  if ! type -p tmux >/dev/null; then
+    sudo apt-get -y install tmux
+  fi
+
+  if [[ -z $TMUX_PANE ]]; then
+    echo starting tmux
+    exec tmux new "$this_script $*"
+  fi
+  
+  local fast_mode=false
+  local subcmd=($this_script)
+  
+  while [[ $# != 0 ]]; do
+    case $1 in
+      --fast)
+        subcmd+=(--fast)
+        fast_mode=true
+        shift
+        ;;
+      *)
+        exit 1
+    esac
+  done
+
+  # Get sudo credentials.  
+  sudo apt-get -y install tmux
+  tmux set-window-option remain-on-exit on
+
+  # Prevent sudo credentials from expiring.
+  while true; do
+    sudo -nv
+    sleep 60
+  done &
+
+  # Display results before exiting.
+  trap on_exit EXIT
+
+  # Run all steps.
+  for step in $(declare -pF | sed 's/.* //g' | egrep '^s[0-9]{2}_' | sort); do
+    printf '\033]2;%s\033\\' $step
+    (
+      cd $bin_dir
+      eval $step
+    )
+  done
+}
+
+main "$@"

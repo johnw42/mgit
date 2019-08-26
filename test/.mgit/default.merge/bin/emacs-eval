@@ -1,0 +1,29 @@
+#! /bin/bash
+
+if [[ $# = 0 ]]; then
+  # With no arguments, open a new frame displaying the contents of the
+  # current directory.
+  my-emacsclient -n -c .
+elif [[ $(emacsclient -e '(framep (selected-frame))') = t ]]; then
+  # If the selected frame is a terminal window, it probably means
+  # there are no GUI frames available, so open a new GUI frame.
+  my-emacsclient -n -c -- "$1"
+else
+  # Open the file in the current frame.
+  my-emacsclient -n -- "$1"
+fi
+
+# #! /usr/bin/env zsh
+
+# EXPR=$1
+# shift
+# BINDINGS=""
+# for i in $(seq $#); do
+#   BINDINGS="$BINDINGS (\$$i ${(qqq)argv[i]})"
+# done
+# EXPR="(let ($BINDINGS) (other-frame 0) (raise-frame) $EXPR nil)"
+
+# if ! emacsclient -e $EXPR 2>/dev/null; then
+#   echo "Starting new emacs instance..." >&2
+#   emacs --eval $EXPR &
+# fi

@@ -1,0 +1,31 @@
+#! /usr/bin/env ruby
+# Use the KDE notifier to display a message.
+
+require 'optparse'
+
+app = "knotify-script"
+event = "knotify-script"
+sound = ""
+file = ""
+present = 16
+level = 0
+
+OptionParser.new do |opts|
+  opts.banner += " <message>"
+  opts.on("-aSTRING", "--app=STRING") {|arg| app = arg}
+  opts.on("--event=STRING") {|arg| event = arg}
+  opts.on("--sound=SOUND") {|arg| sound = arg}
+  opts.on("--file=FILE") {|arg| file = arg}
+  opts.on("--present=INT", Integer) {|arg| present = arg}
+  opts.on("--level=INT", Integer) {|arg| level = arg}
+end.parse!
+
+if ENV["KDE_FULL_SESSION"] != "true"
+  $stderr.puts "No KDE session."
+  exit
+end
+
+dcop_cmd = ["dcop", "knotify", "default", "notify",
+            event, app, ARGV.join(" "), sound, file, present.to_s, level.to_s]
+
+system *dcop_cmd

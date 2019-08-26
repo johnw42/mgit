@@ -1,0 +1,4 @@
+#! /bin/bash
+cd ~/content_shell || exit 1
+rsync -rl --delete --exclude=/app.conf --exclude=/locales /home/mfoltz/content_shell/ .
+./content_shell --v=2 "$@" |& tee /tmp/content_shell.log

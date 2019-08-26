@@ -1,0 +1,13 @@
+#! /bin/bash
+
+# Run once per hour by cron.
+
+set -e
+
+main() {
+  if [[ $(seconds_since_last_prompt) -le 3600 ]]; then
+    vcsh home push
+  fi
+}
+
+main()

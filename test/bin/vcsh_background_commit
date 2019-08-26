@@ -1,0 +1,65 @@
+#! /bin/bash
+
+unset IFS
+repos=($(vcsh list | egrep -w 'home|phome'))
+
+cd
+
+# Find files that are in both repositories and keep a copy only in the
+# repository where the file was touched most recently.
+for filename in $(for repo in ${repos[@]}; do
+                    vcsh $repo ls-files
+                  done | sort | uniq -d); do
+  latest_time=0
+  latest_repo=
+  for repo in ${repos[@]}; do
+    repo_time=$(vcsh $repo log -1 --pretty='tformat:%at' -- $filename)
+    if [[ $repo_time -gt $latest_time ]]; then
+      latest_time=$repo_time
+      latest_repo=$repo
+    fi
+  done
+  for repo in ${repos[@]}; do
+    if [[ $repo != $latest_repo ]]; then
+      vcsh $repo rm --cached $filename
+    fi
+  done
+done
+
+for repo in ${repos[@]}; do
+  if [[ $repo == phome ]]; then
+    crontab -l > config/crontab_backup
+    vcsh phome add -f config/crontab_backup
+  fi
+  
+  # Add everything.  This happens in the foreground to avoid locking
+  # issues, so if it's slow, it means git is tracking too many files!
+  (
+    vcsh "$repo" commit -a -m "$HOSTNAME vcsh_background_commit $PPID"
+  ) >/dev/null 2>&1
+
+  # (
+  #   # Find the git repo for this repository.
+  #   GIT_DIR=$(vcsh run "$repo" bash -c 'echo $GIT_DIR')
+  
+  #   for _ in $(seq 10); do
+  #     # Wait a little while to avoid multiple pushes when a bunch of
+  #     # repo updates happen in quick succession.
+  #     sleep 30
+
+  #     # Try to push unless the index is locked.
+  #     if [[ ! -f $GIT_DIR/index.lock ]]; then
+  #       # Push changes.  This can happen in the background because it
+  #       # doesn't involve writing to the repo.
+  #       vcsh "$repo" fetch
+  #       vcsh "$repo" -c merge.defaultToUpstream=true merge --ff-only -q
+  #       vcsh "$repo" push -q
+  #       break
+  #     fi
+  #   done
+  # ) &
+done
+
+# Local Variables:
+# sh-basic-offset: 2
+# End:
